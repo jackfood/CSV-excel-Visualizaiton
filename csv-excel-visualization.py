@@ -24,9 +24,9 @@ def get_label_size():
 
 def get_chart_size():
     sizes = {
-        "Small": (9, 7),
-        "Medium": (12, 10),
-        "Large": (16, 13)
+        "Small": (8, 6),
+        "Medium": (10, 8),
+        "Large": (20, 16)
     }
     return sizes[chart_size.get()]
 
@@ -43,30 +43,11 @@ def recommend_chart(event):
     if x_axis_dropdown.get() and y_axis_dropdown.get():
         x_column = x_axis_dropdown.get()
         y_column = y_axis_dropdown.get()
-        x_type = dataset[x_column].dtype
-        y_type = dataset[y_column].dtype
-        recommendation = ""
-
-        if np.issubdtype(x_type, np.number) and np.issubdtype(y_type, np.number):
-            recommendation = "Scatter Plot"
-        elif np.issubdtype(x_type, np.number) and (dataset[y_column].nunique() <= 10):
-            recommendation = "Bar"
-        elif (dataset[x_column].nunique() <= 10) and np.issubdtype(y_type, np.number):
-            recommendation = "Bar"
-        elif (dataset[x_column].nunique() <= 10) and (dataset[y_column].nunique() <= 10):
-            recommendation = "Stacked Bar"
-        elif np.issubdtype(x_type, np.object_) and np.issubdtype(y_type, np.object_):
-            recommendation = "Scatter Plot"
-        else:
-            recommendation = "Scatter Plot"
-
+        recommendation = recommend_chart_type(dataset, x_column, y_column)
         recommendation_label["text"] = f"Recommended Chart: {recommendation}"
-
-        # Set recommendation as the selected option in the Chart Type dropdown
         chart_type_dropdown.set(recommendation)
-
-        x_axis_label["text"] = f"X Axis ({get_data_type(x_type, x_column)}):"
-        y_axis_label["text"] = f"Y Axis ({get_data_type(y_type, y_column)}):"
+        x_axis_label["text"] = f"X Axis ({get_data_type(dataset[x_column].dtype, x_column)}):"
+        y_axis_label["text"] = f"Y Axis ({get_data_type(dataset[y_column].dtype, y_column)}):"
 
 def get_data_type(dtype, column):
     if np.issubdtype(dtype, np.number):
@@ -88,16 +69,58 @@ def validate_font_size(entry_value):
     messagebox.showwarning("Invalid Input", "Please enter a numeric value between 3 and 24.")
     return False
 
-def recommend_chart_type(x_column, y_column):
-    x_type = dataset[x_column].dtype
-    y_type = dataset[y_column].dtype
-    if np.issubdtype(x_type, np.number) and np.issubdtype(y_type, np.number):
-        return "Scatter Plot"
-    elif np.issubdtype(x_type, np.number) or np.issubdtype(y_type, np.number):
-        return "Bar"
+def recommend_chart(event):
+    if x_axis_dropdown.get() and y_axis_dropdown.get():
+        x_column = x_axis_dropdown.get()
+        y_column = y_axis_dropdown.get()
+        
+        recommendation = advanced_chart_recommendation(x_column, y_column, dataset)
+        
+        recommendation_label["text"] = f"Recommended Chart: {recommendation}"
+        chart_type_dropdown.set(recommendation)
+
+        x_axis_label["text"] = f"X Axis ({get_data_type(dataset[x_column].dtype, x_column)}):"
+        y_axis_label["text"] = f"Y Axis ({get_data_type(dataset[y_column].dtype, y_column)}):"
+
+def advanced_chart_recommendation(x_column, y_column, dataset):
+    x_dtype = dataset[x_column].dtype
+    y_dtype = dataset[y_column].dtype
+    x_unique_count = dataset[x_column].nunique()
+    y_unique_count = dataset[y_column].nunique()
+    dataset_length = len(dataset)
+    
+    # Check for numeric data types
+    if pd.api.types.is_numeric_dtype(x_dtype) and pd.api.types.is_numeric_dtype(y_dtype):
+        if dataset_length > 1000:
+            return "Scatter Plot"
+        else:
+            return "Line"
+    # Adjust check for categorical data types using the recommended approach
+    elif isinstance(x_dtype, pd.CategoricalDtype) or pd.api.types.is_object_dtype(x_dtype):
+        if y_unique_count <= 10:
+            return "Bar"
+        else:
+            if dataset_length > 50:
+                return "Box Plot"
+            else:
+                return "Bar"
+    # Adjust check for categorical data types for y_dtype as well
+    elif isinstance(y_dtype, pd.CategoricalDtype) or pd.api.types.is_object_dtype(y_dtype):
+        if x_unique_count <= 10:
+            return "Pie Chart" if dataset_length <= 20 else "Bar"
+        else:
+            return "Histogram"
     else:
-        # For two categorical variables, consider a different approach or inform the user
-        return "Heatmap or Frequency Table"
+        return "Scatter Plot"
+
+def get_data_type(dtype, column):
+    if np.issubdtype(dtype, np.number):
+        return "Number"
+    elif dataset[column].nunique() <= 10:
+        return "Categorical"
+    else:
+        return "Non-categorical"
+
 
 def generate_visualization():
     try:
@@ -109,50 +132,47 @@ def generate_visualization():
         tick_label_font_size = int(tick_label_font_size_var.get()) if validate_font_size(tick_label_font_size_var.get()) else 10
         tick_label_rotation = tick_label_rotation_var.get()
 
-        plt.figure(figsize=get_chart_size())
+        fig, ax = plt.subplots(figsize=get_chart_size()) # Explicit figure and axes creation
 
-        # Rotation setup for tick labels should be handled alongside explicit font size setting like so:
-        plt.xticks(rotation=tick_label_rotation)
-        plt.yticks(rotation=tick_label_rotation)  # If you want y-tick labels rotated as well
-
-        # Correct application of tick label font size after specifying rotation
-        plt.tick_params(axis='x', labelsize=tick_label_font_size)
-        plt.tick_params(axis='y', labelsize=tick_label_font_size)
+        if chart_type in ["Line", "Bar", "Column", "Area", "Scatter Plot"]:
+            ax.set_xlabel(x_column, fontsize=tick_label_font_size)
+            ax.set_ylabel(y_column, fontsize=tick_label_font_size)
+            ax.tick_params(axis='x', labelsize=tick_label_font_size, rotation=tick_label_rotation)
+            ax.tick_params(axis='y', labelsize=tick_label_font_size)
 
         if chart_type == "Line":
-            plt.plot(dataset[x_column], dataset[y_column])
+            ax.plot(dataset[x_column], dataset[y_column])
         elif chart_type == "Bar":
-            plt.bar(dataset[x_column], dataset[y_column])
+            ax.bar(dataset[x_column], dataset[y_column])
         elif chart_type == "Column":
-            plt.barh(dataset[y_column], dataset[x_column])
+            ax.barh(dataset[y_column], dataset[x_column])
         elif chart_type == "Area":
-            plt.fill_between(dataset[x_column], dataset[y_column])
+            ax.fill_between(dataset[x_column], dataset[y_column])
         elif chart_type == "Stacked Bar":
             crosstab = pd.crosstab(dataset[x_column], dataset[y_column])
-            crosstab.plot(kind='bar', stacked=True)
+            crosstab.plot(kind='bar', stacked=True, ax=ax) # Use the explicit axes object
         elif chart_type == "Scatter Plot":
-            plt.scatter(dataset[x_column], dataset[y_column])
+            ax.scatter(dataset[x_column], dataset[y_column])
         elif chart_type == "Dual Axes":
-            fig, ax1 = plt.subplots(figsize=get_chart_size())
-            ax2 = ax1.twinx()
-            ax1.plot(dataset[x_column], label=x_column)
+            ax.clear() # Clear the original axis to reuse the figure for dual axes
+            ax2 = ax.twinx()
+            ax.plot(dataset[x_column], label=x_column)
             ax2.plot(dataset[y_column], 'r', label=y_column)
-            ax1.set_xlabel(x_column, fontsize=tick_label_font_size)
-            ax1.set_ylabel(y_column, fontsize=tick_label_font_size)
-            ax1.tick_params(axis='x', labelsize=tick_label_font_size)
-            ax1.tick_params(axis='y', labelsize=tick_label_font_size)
+            ax.set_xlabel(x_column, fontsize=tick_label_font_size)
+            ax.set_ylabel(y_column, fontsize=tick_label_font_size)
+            ax.tick_params(axis='x', labelsize=tick_label_font_size)
+            ax.tick_params(axis='y', labelsize=tick_label_font_size)
             ax2.tick_params(axis='y', labelsize=tick_label_font_size)
 
-        plt.xlabel(x_column, fontsize=tick_label_font_size)
-        plt.ylabel(y_column, fontsize=tick_label_font_size)
-        plt.title(f"{chart_type}: {x_column} vs {y_column}", fontsize=title_font_size)
+        ax.set_title(f"{chart_type}: {x_column} vs {y_column}", fontsize=title_font_size)
 
-        plt.show()
+        plt.show() # Call show only once at the end
 
     except ValueError as e:
         messagebox.showerror("Error", "Invalid font size. Please enter a number between 3 and 24.")
     except Exception as e:
         messagebox.showerror("Error", str(e))
+
 
 def clear_selections():
     x_axis_dropdown.set("")
