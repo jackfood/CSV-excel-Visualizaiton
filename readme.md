@@ -35,7 +35,7 @@ This project is a Python-based data visualization tool that allows users to load
 1. Clone the repository:
 
 ```
-git clone https://github.com/your-username/csv-excel-data-visualizer.git
+git clone https://github.com/jackfood/csv-excel-data-visualizer.git
 ```
 
 2. Install the required dependencies:
