@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 from tkinter import filedialog, messagebox, ttk, IntVar
 import tkinter as tk
 import numpy as np
+import seaborn as sns
+from PIL import Image, ImageTk
+import os
 
 def load_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV and Excel Files", "*.csv;*.xlsx")])
@@ -37,7 +40,7 @@ def update_dropdowns(data):
     column_names = dataset.columns.tolist()
     x_axis_dropdown["values"] = column_names
     y_axis_dropdown["values"] = column_names
-    chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes"]
+    chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram"]
 
 def recommend_chart(event):
     if x_axis_dropdown.get() and y_axis_dropdown.get():
@@ -56,18 +59,6 @@ def get_data_type(dtype, column):
         return "Categorical"
     else:
         return "Non-categorical"
-
-def validate_font_size(entry_value):
-    """Validate the font size entry to be numeric and between 3 and 24."""
-    try:
-        value = int(entry_value)
-        if 3 <= value <= 24:
-            return True
-    except ValueError:
-        pass
-    
-    messagebox.showwarning("Invalid Input", "Please enter a numeric value between 3 and 24.")
-    return False
 
 def recommend_chart(event):
     if x_axis_dropdown.get() and y_axis_dropdown.get():
@@ -121,6 +112,10 @@ def get_data_type(dtype, column):
     else:
         return "Non-categorical"
 
+def get_label_size():
+    # Assuming 'label_size_var' is a tkinter StringVar holding the label size value.
+    # Convert it to int before returning.
+    return int(label_size_var.get())
 
 def generate_visualization():
     try:
@@ -128,51 +123,53 @@ def generate_visualization():
         x_column = x_axis_dropdown.get()
         y_column = y_axis_dropdown.get()
 
-        title_font_size = int(title_font_size_var.get()) if validate_font_size(title_font_size_var.get()) else 12
-        tick_label_font_size = int(tick_label_font_size_var.get()) if validate_font_size(tick_label_font_size_var.get()) else 10
+        title_font_size = int(title_font_size_var.get())
+        tick_label_font_size = int(tick_label_font_size_var.get())
         tick_label_rotation = tick_label_rotation_var.get()
 
-        fig, ax = plt.subplots(figsize=get_chart_size()) # Explicit figure and axes creation
+        fig, ax = plt.subplots(figsize=get_chart_size())  # Explicit figure and axes creation
 
-        if chart_type in ["Line", "Bar", "Column", "Area", "Scatter Plot"]:
-            ax.set_xlabel(x_column, fontsize=tick_label_font_size)
+        if chart_type == "Bar" or chart_type == "Column":
+            if chart_type == "Bar":
+                ax.bar(dataset[x_column], dataset[y_column], color='skyblue')
+            else:  # Column
+                ax.barh(dataset[x_column], dataset[y_column], color='skyblue')
             ax.set_ylabel(y_column, fontsize=tick_label_font_size)
-            ax.tick_params(axis='x', labelsize=tick_label_font_size, rotation=tick_label_rotation)
-            ax.tick_params(axis='y', labelsize=tick_label_font_size)
-
-        if chart_type == "Line":
-            ax.plot(dataset[x_column], dataset[y_column])
-        elif chart_type == "Bar":
-            ax.bar(dataset[x_column], dataset[y_column])
-        elif chart_type == "Column":
-            ax.barh(dataset[y_column], dataset[x_column])
         elif chart_type == "Area":
-            ax.fill_between(dataset[x_column], dataset[y_column])
+            ax.fill_between(range(len(dataset[x_column])), dataset[y_column])
+            ax.set_ylabel(y_column, fontsize=tick_label_font_size)
         elif chart_type == "Stacked Bar":
             crosstab = pd.crosstab(dataset[x_column], dataset[y_column])
-            crosstab.plot(kind='bar', stacked=True, ax=ax) # Use the explicit axes object
+            crosstab.plot(kind='bar', stacked=True, ax=ax)
         elif chart_type == "Scatter Plot":
             ax.scatter(dataset[x_column], dataset[y_column])
-        elif chart_type == "Dual Axes":
-            ax.clear() # Clear the original axis to reuse the figure for dual axes
-            ax2 = ax.twinx()
-            ax.plot(dataset[x_column], label=x_column)
-            ax2.plot(dataset[y_column], 'r', label=y_column)
-            ax.set_xlabel(x_column, fontsize=tick_label_font_size)
             ax.set_ylabel(y_column, fontsize=tick_label_font_size)
-            ax.tick_params(axis='x', labelsize=tick_label_font_size)
+        elif chart_type == "Line":
+            ax.plot(dataset[x_column], dataset[y_column])
+            ax.set_ylabel(y_column, fontsize=tick_label_font_size)
+        elif chart_type == "Histogram":
+            ax.hist(dataset[x_column], bins=10)
+            ax.set_ylabel('Frequency', fontsize=tick_label_font_size)
+        elif chart_type == "Dual Axes":
+            ax2 = ax.twinx()
+            ax.plot(dataset[x_column], label=x_column, color='skyblue')
+            ax2.plot(dataset[y_column], label=y_column, color='darkorange')
+            ax.set_xlabel(x_column, fontsize=tick_label_font_size)
+            ax.set_ylabel(x_column, fontsize=tick_label_font_size)
+            ax2.set_ylabel(y_column, fontsize=tick_label_font_size)
+            ax.tick_params(axis='x', labelsize=tick_label_font_size, rotation=tick_label_rotation)
             ax.tick_params(axis='y', labelsize=tick_label_font_size)
             ax2.tick_params(axis='y', labelsize=tick_label_font_size)
 
+        ax.set_xlabel(x_column, fontsize=tick_label_font_size)
+        ax.tick_params(axis='x', labelsize=tick_label_font_size, rotation=tick_label_rotation)
+        ax.tick_params(axis='y', labelsize=tick_label_font_size)
         ax.set_title(f"{chart_type}: {x_column} vs {y_column}", fontsize=title_font_size)
 
-        plt.show() # Call show only once at the end
+        plt.show()
 
-    except ValueError as e:
-        messagebox.showerror("Error", "Invalid font size. Please enter a number between 3 and 24.")
     except Exception as e:
         messagebox.showerror("Error", str(e))
-
 
 def clear_selections():
     x_axis_dropdown.set("")
