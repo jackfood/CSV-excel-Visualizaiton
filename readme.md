@@ -98,5 +98,3 @@ This project is licensed under the [MIT License](LICENSE).
 - [Matplotlib](https://matplotlib.org/)
 - [Tkinter](https://docs.python.org/3/library/tkinter.html)
 - [NumPy](https://numpy.org/)
-
-Feel free to customize the README file based on your specific project details and requirements.
