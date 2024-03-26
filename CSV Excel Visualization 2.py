@@ -32,6 +32,10 @@ class DataVisualizerGUI:
         self.title_size = tk.StringVar(value="12")
         self.x_label_size = tk.StringVar(value="10")
         self.y_label_size = tk.StringVar(value="10")
+        self.chart_type_var = tk.StringVar(value="Auto")
+        self.chart_type_button = ttk.Button(master, text="Select Chart Type", command=self.select_chart_type)
+        self.chart_type_button.pack(pady=5)
+        
         
         self.customization_frame = ttk.Frame(master)
         self.customization_frame.pack(pady=10)
@@ -74,7 +78,19 @@ class DataVisualizerGUI:
         self.file_entry.delete(0, tk.END)
         self.file_entry.insert(0, file_path)
         self.load_data(file_path)
+    
+    def select_chart_type(self):
+        chart_type_window = tk.Toplevel(self.master)
+        chart_type_window.title("Select Chart Type")
         
+        chart_types = ["Auto", "Line", "Bar", "Histogram", "Pie"]
+        
+        for chart_type in chart_types:
+            ttk.Radiobutton(chart_type_window, text=chart_type, variable=self.chart_type_var, value=chart_type).pack()
+        
+        ttk.Button(chart_type_window, text="OK", command=chart_type_window.destroy).pack()
+    
+    
     def browse_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls"), ("CSV files", "*.csv")])
         if file_path:
@@ -171,57 +187,111 @@ class DataVisualizerGUI:
         
     def visualize_data(self):
         selected_columns = [self.column_listbox.get(idx) for idx in self.column_listbox.curselection()]
-        
-        if len(selected_columns) < 2:
-            tk.messagebox.showwarning("Warning", "Please select at least two columns for visualization.")
+    
+        if len(selected_columns) < 1:
+            tk.messagebox.showwarning("Warning", "Please select at least one column for visualization.")
             return
-        
+    
         fig, ax = plt.subplots(figsize=(int(self.chart_width.get()), int(self.chart_height.get())))
-        
-        for i in range(len(selected_columns) - 1):
-            field1 = selected_columns[i]
-            field2 = selected_columns[i + 1]
-            
-            if self.get_data_type(self.data[field1]) == "Categorical" and self.get_data_type(self.data[field2]) == "Categorical":
-                cross_tab = pd.crosstab(self.data[field1], self.data[field2])
-                ax.imshow(cross_tab, cmap="YlGn", aspect="auto")
-                ax.set_xticks(range(len(cross_tab.columns)))
-                ax.set_xticklabels(cross_tab.columns, rotation=90, fontsize=int(self.tick_label_size.get()))
-                ax.set_yticks(range(len(cross_tab.index)))
-                ax.set_yticklabels(cross_tab.index, fontsize=int(self.tick_label_size.get()))
-                for i in range(len(cross_tab.index)):
-                    for j in range(len(cross_tab.columns)):
-                        ax.text(j, i, cross_tab.iloc[i, j], ha="center", va="center", color="black")
-                ax.set_title(f"{field1} vs {field2}", fontsize=int(self.title_size.get()))
-            
-            elif self.get_data_type(self.data[field1]) == "Categorical" and self.get_data_type(self.data[field2]) in ["Integer", "Decimal"]:
-                self.data.boxplot(column=field2, by=field1, ax=ax)
-                ax.set_title(f"{field2} by {field1}", fontsize=int(self.title_size.get()))
-                ax.set_xlabel(field1, fontsize=int(self.x_label_size.get()))
-                ax.set_ylabel(field2, fontsize=int(self.y_label_size.get()))
-                plt.xticks(rotation=90, fontsize=int(self.tick_label_size.get()))
-                plt.yticks(fontsize=int(self.tick_label_size.get()))
-            
-            elif self.get_data_type(self.data[field1]) in ["Integer", "Decimal"] and self.get_data_type(self.data[field2]) in ["Integer", "Decimal"]:
-                ax.scatter(self.data[field1], self.data[field2])
-                ax.set_xlabel(field1, fontsize=int(self.x_label_size.get()))
-                ax.set_ylabel(field2, fontsize=int(self.y_label_size.get()))
-                ax.set_title(f"{field1} vs {field2}", fontsize=int(self.title_size.get()))
+    
+        if self.chart_type_var.get() == "Auto":
+            if len(selected_columns) == 1:
+                if self.get_data_type(self.data[selected_columns[0]]) == "Categorical":
+                    self.data[selected_columns[0]].value_counts().plot(kind='bar', ax=ax)
+                    ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                    ax.set_ylabel("Count", fontsize=int(self.y_label_size.get()))
+                    ax.set_title(f"Bar Chart of {selected_columns[0]}", fontsize=int(self.title_size.get()))
+                    plt.xticks(rotation=90, fontsize=int(self.tick_label_size.get()))
+                    plt.yticks(fontsize=int(self.tick_label_size.get()))
+                elif self.get_data_type(self.data[selected_columns[0]]) in ["Integer", "Decimal"]:
+                    self.data[selected_columns[0]].plot(kind='hist', ax=ax)
+                    ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                    ax.set_ylabel("Frequency", fontsize=int(self.y_label_size.get()))
+                    ax.set_title(f"Histogram of {selected_columns[0]}", fontsize=int(self.title_size.get()))
+                    plt.xticks(fontsize=int(self.tick_label_size.get()))
+                    plt.yticks(fontsize=int(self.tick_label_size.get()))
+                else:
+                    ax.text(0.5, 0.5, "No suitable visualization found for the selected column.", ha="center", va="center", transform=ax.transAxes)
+            elif len(selected_columns) == 2:
+                if self.get_data_type(self.data[selected_columns[0]]) == "Categorical" and self.get_data_type(self.data[selected_columns[1]]) == "Categorical":
+                    cross_tab = pd.crosstab(self.data[selected_columns[0]], self.data[selected_columns[1]])
+                    cross_tab.plot(kind='bar', ax=ax)
+                    ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                    ax.set_ylabel(selected_columns[1], fontsize=int(self.y_label_size.get()))
+                    ax.set_title(f"Bar Chart of {selected_columns[0]} vs {selected_columns[1]}", fontsize=int(self.title_size.get()))
+                    plt.xticks(rotation=90, fontsize=int(self.tick_label_size.get()))
+                    plt.yticks(fontsize=int(self.tick_label_size.get()))
+                elif self.get_data_type(self.data[selected_columns[0]]) == "Categorical" and self.get_data_type(self.data[selected_columns[1]]) in ["Integer", "Decimal"]:
+                    self.data.boxplot(column=selected_columns[1], by=selected_columns[0], ax=ax)
+                    ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                    ax.set_ylabel(selected_columns[1], fontsize=int(self.y_label_size.get()))
+                    ax.set_title(f"Box Plot of {selected_columns[1]} by {selected_columns[0]}", fontsize=int(self.title_size.get()))
+                    plt.xticks(rotation=90, fontsize=int(self.tick_label_size.get()))
+                    plt.yticks(fontsize=int(self.tick_label_size.get()))
+                elif self.get_data_type(self.data[selected_columns[0]]) in ["Integer", "Decimal"] and self.get_data_type(self.data[selected_columns[1]]) in ["Integer", "Decimal"]:
+                    ax.scatter(self.data[selected_columns[0]], self.data[selected_columns[1]])
+                    ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                    ax.set_ylabel(selected_columns[1], fontsize=int(self.y_label_size.get()))
+                    ax.set_title(f"Scatter Plot of {selected_columns[0]} vs {selected_columns[1]}", fontsize=int(self.title_size.get()))
+                    plt.xticks(fontsize=int(self.tick_label_size.get()))
+                    plt.yticks(fontsize=int(self.tick_label_size.get()))
+                else:
+                    ax.text(0.5, 0.5, "No suitable visualization found for the selected columns.", ha="center", va="center", transform=ax.transAxes)
+            else:
+                ax.text(0.5, 0.5, "Please select either one or two columns for visualization.", ha="center", va="center", transform=ax.transAxes)
+        elif self.chart_type_var.get() == "Line":
+            if len(selected_columns) == 1:
+                self.data[selected_columns[0]].plot(kind='line', ax=ax)
+                ax.set_xlabel("Index", fontsize=int(self.x_label_size.get()))
+                ax.set_ylabel(selected_columns[0], fontsize=int(self.y_label_size.get()))
+                ax.set_title(f"Line Chart of {selected_columns[0]}", fontsize=int(self.title_size.get()))
                 plt.xticks(fontsize=int(self.tick_label_size.get()))
                 plt.yticks(fontsize=int(self.tick_label_size.get()))
-            
-            elif self.get_data_type(self.data[field1]) == "Datetime" and self.get_data_type(self.data[field2]) in ["Integer", "Decimal"]:
-                self.data = self.data.sort_values(by=field1)
-                ax.plot(self.data[field1], self.data[field2])
-                ax.set_xlabel(field1, fontsize=int(self.x_label_size.get()))
-                ax.set_ylabel(field2, fontsize=int(self.y_label_size.get()))
-                ax.set_title(f"{field2} over {field1}", fontsize=int(self.title_size.get()))
-                plt.xticks(rotation=45, fontsize=int(self.tick_label_size.get()))
+            elif len(selected_columns) == 2:
+                self.data.plot(x=selected_columns[0], y=selected_columns[1], kind='line', ax=ax)
+                ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                ax.set_ylabel(selected_columns[1], fontsize=int(self.y_label_size.get()))
+                ax.set_title(f"Line Chart of {selected_columns[1]} vs {selected_columns[0]}", fontsize=int(self.title_size.get()))
+                plt.xticks(fontsize=int(self.tick_label_size.get()))
                 plt.yticks(fontsize=int(self.tick_label_size.get()))
-            
             else:
-                ax.text(0.5, 0.5, "No suitable visualization found for the selected fields.", ha="center", va="center", transform=ax.transAxes)
-        
+                ax.text(0.5, 0.5, "Please select either one or two columns for line chart visualization.", ha="center", va="center", transform=ax.transAxes)
+        elif self.chart_type_var.get() == "Bar":
+            if len(selected_columns) == 1:
+                self.data[selected_columns[0]].value_counts().plot(kind='bar', ax=ax)
+                ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                ax.set_ylabel("Count", fontsize=int(self.y_label_size.get()))
+                ax.set_title(f"Bar Chart of {selected_columns[0]}", fontsize=int(self.title_size.get()))
+                plt.xticks(rotation=90, fontsize=int(self.tick_label_size.get()))
+                plt.yticks(fontsize=int(self.tick_label_size.get()))
+            elif len(selected_columns) == 2:
+                cross_tab = pd.crosstab(self.data[selected_columns[0]], self.data[selected_columns[1]])
+                cross_tab.plot(kind='bar', ax=ax)
+                ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                ax.set_ylabel(selected_columns[1], fontsize=int(self.y_label_size.get()))
+                ax.set_title(f"Bar Chart of {selected_columns[0]} vs {selected_columns[1]}", fontsize=int(self.title_size.get()))
+                plt.xticks(rotation=90, fontsize=int(self.tick_label_size.get()))
+                plt.yticks(fontsize=int(self.tick_label_size.get()))
+            else:
+                ax.text(0.5, 0.5, "Please select either one or two columns for bar chart visualization.", ha="center", va="center", transform=ax.transAxes)
+        elif self.chart_type_var.get() == "Histogram":
+            if len(selected_columns) == 1:
+                self.data[selected_columns[0]].plot(kind='hist', ax=ax)
+                ax.set_xlabel(selected_columns[0], fontsize=int(self.x_label_size.get()))
+                ax.set_ylabel("Frequency", fontsize=int(self.y_label_size.get()))
+                ax.set_title(f"Histogram of {selected_columns[0]}", fontsize=int(self.title_size.get()))
+                plt.xticks(fontsize=int(self.tick_label_size.get()))
+                plt.yticks(fontsize=int(self.tick_label_size.get()))
+            else:
+                ax.text(0.5, 0.5, "Please select only one column for histogram visualization.", ha="center", va="center", transform=ax.transAxes)
+        elif self.chart_type_var.get() == "Pie":
+            if len(selected_columns) == 1:
+                self.data[selected_columns[0]].value_counts().plot(kind='pie', ax=ax, autopct='%1.1f%%')
+                ax.set_title(f"Pie Chart of {selected_columns[0]}", fontsize=int(self.title_size.get()))
+                ax.legend(fontsize=int(self.tick_label_size.get()))
+            else:
+                ax.text(0.5, 0.5, "Please select only one column for pie chart visualization.", ha="center", va="center", transform=ax.transAxes)
+    
         fig.tight_layout()
         
         visualization_window = tk.Toplevel(self.master)
@@ -230,7 +300,7 @@ class DataVisualizerGUI:
         canvas = FigureCanvasTkAgg(fig, master=visualization_window)
         canvas.draw()
         canvas.get_tk_widget().pack()
-        
+
     def get_data_type(self, column):
         if column.dtype == object:
             if column.nunique() == len(column):
