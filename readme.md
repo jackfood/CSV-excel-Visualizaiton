@@ -1,7 +1,7 @@
-# Image OCR Converter**
+# Image OCR Converter
 This project is a Python script designed to convert various image formats such as PNG, JPEG, GIF, and BMP to JPG format while performing Optical Character Recognition (OCR) using Tesseract. It saves the OCR results as text files and embeds them into the image metadata. The script utilizes libraries such as Pillow, pytesseract, and piexif for image processing and OCR.
 
-**Features**
+## Features
 Convert images to JPG format
 Perform OCR using Tesseract
 Save OCR text as separate files
@@ -14,7 +14,7 @@ bash
 ```
 pip install pillow pytesseract piexif
 ```
-**Usage**
+## Usage
 Run the script.
 Select a folder containing image files.
 Converted images and OCR text files will be saved in a subfolder named converted_images.
@@ -38,7 +38,7 @@ input_images/
 ```
 Additionally, the OCR text will be embedded into the image metadata.
 
-**Notes**
+## Notes
 Ensure Tesseract is properly installed and its executable path is correctly set in the script (tesseract_path variable).
 This script supports common image formats like PNG, JPEG, GIF, and BMP. You can extend the supported formats by modifying the code.
 
