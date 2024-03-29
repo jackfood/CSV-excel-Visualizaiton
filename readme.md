@@ -39,7 +39,7 @@ input_images/
 Additionally, the OCR text will be embedded into the image metadata.
 
 ## Notes
-Tesseract OCR Engine can be downloaded as a compressed RAR file from [here](https://github.com/tesseract-ocr/tesseract). Ensure it is properly installed, and its executable path is correctly set in the script (tesseract_path variable).
+Tesseract OCR Engine can be downloaded as a compressed RAR file here or from [Tesseract OCR](https://github.com/tesseract-ocr/tesseract). Ensure it is properly installed, and its executable path is correctly set in the script (tesseract_path variable).
 This script supports common image formats like PNG, JPEG, GIF, and BMP. You can extend the supported formats by modifying the code.
 Credits to [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) for providing the OCR engine used in this project.
 
