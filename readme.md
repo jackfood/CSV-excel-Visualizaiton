@@ -1,3 +1,48 @@
+# Image OCR Converter**
+This project is a Python script designed to convert various image formats such as PNG, JPEG, GIF, and BMP to JPG format while performing Optical Character Recognition (OCR) using Tesseract. It saves the OCR results as text files and embeds them into the image metadata. The script utilizes libraries such as Pillow, pytesseract, and piexif for image processing and OCR.
+
+**Features**
+Convert images to JPG format
+Perform OCR using Tesseract
+Save OCR text as separate files
+Embed OCR text into image metadata
+Installation
+Install Python 3.x from python.org.
+Install Tesseract OCR Engine from here.
+Install required Python packages:
+bash
+```
+pip install pillow pytesseract piexif
+```
+**Usage**
+Run the script.
+Select a folder containing image files.
+Converted images and OCR text files will be saved in a subfolder named converted_images.
+Example
+Suppose you have a folder named input_images containing various image files like .png, .jpeg, .gif, .bmp, etc. After running the script, a folder named converted_images will be created inside the input_images directory. The converted images in JPG format and their OCR text files will be saved in this folder.
+
+```
+input_images/
+    ├── converted_images/
+    │   ├── image1.jpg
+    │   ├── image1_ocr_result.txt
+    │   ├── image2.jpg
+    │   ├── image2_ocr_result.txt
+    │   ├── image3.jpg
+    │   ├── image3_ocr_result.txt
+    │   └── ...
+    ├── image1.png
+    ├── image2.jpg
+    ├── image3.gif
+    └── ...
+```
+Additionally, the OCR text will be embedded into the image metadata.
+
+**Notes**
+Ensure Tesseract is properly installed and its executable path is correctly set in the script (tesseract_path variable).
+This script supports common image formats like PNG, JPEG, GIF, and BMP. You can extend the supported formats by modifying the code.
+
+
 # CSV/Excel Data Visualizer
 
 This project is a Python-based data visualization tool that allows users to load CSV or Excel files, select columns for the X and Y axes, choose a chart type, and customize various chart properties. The tool provides a user-friendly graphical interface built with Tkinter and utilizes popular data analysis and visualization libraries such as Pandas and Matplotlib.
