@@ -97,8 +97,10 @@ def generate_visualization():
        y_column = y_axis_dropdown.get()
 
        title_font_size = int(title_font_size_var.get())
-       tick_label_font_size = int(tick_label_font_size_var.get())
-       tick_label_rotation = tick_label_rotation_var.get()
+       x_tick_label_font_size = int(x_axis_font_size_var.get())
+       y_tick_label_font_size = int(y_axis_font_size_var.get())
+       x_tick_label_rotation = x_tick_label_rotation_var.get()
+       y_tick_label_rotation = y_tick_label_rotation_var.get()
 
        fig, ax = plt.subplots(figsize=get_chart_size())  # Explicit figure and axes creation
 
@@ -116,12 +118,16 @@ def generate_visualization():
                    ax.bar(dataset[x_column], dataset[y_column], color='skyblue')
                else:  # Column
                    ax.barh(dataset[x_column], dataset[y_column], color='skyblue')
-           ax.set_xlabel(x_column, fontsize=tick_label_font_size)
-           ax.set_ylabel(y_column, fontsize=tick_label_font_size)
+           ax.set_xlabel(x_column, fontsize=x_tick_label_font_size)
+           ax.set_ylabel(y_column, fontsize=y_tick_label_font_size)
+           ax.tick_params(axis='x', labelsize=x_tick_label_font_size, rotation=x_tick_label_rotation)
+           ax.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
        elif chart_type == "Area":
            ax.fill_between(range(len(dataset[x_column])), dataset[y_column])
-           ax.set_xlabel(x_column, fontsize=tick_label_font_size)
-           ax.set_ylabel(y_column, fontsize=tick_label_font_size)
+           ax.set_xlabel(x_column, fontsize=x_tick_label_font_size)
+           ax.set_ylabel(y_column, fontsize=y_tick_label_font_size)
+           ax.tick_params(axis='x', labelsize=x_tick_label_font_size, rotation=x_tick_label_rotation)
+           ax.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
        elif chart_type == "Stacked Bar":
            crosstab = pd.crosstab(dataset[x_column], dataset[y_column])
            if use_seaborn.get():
@@ -133,32 +139,38 @@ def generate_visualization():
                sns.scatterplot(x=x_column, y=y_column, data=dataset, ax=ax)
            else:
                ax.scatter(dataset[x_column], dataset[y_column])
-           ax.set_xlabel(x_column, fontsize=tick_label_font_size)
-           ax.set_ylabel(y_column, fontsize=tick_label_font_size)
+           ax.set_xlabel(x_column, fontsize=x_tick_label_font_size)
+           ax.set_ylabel(y_column, fontsize=y_tick_label_font_size)
+           ax.tick_params(axis='x', labelsize=x_tick_label_font_size, rotation=x_tick_label_rotation)
+           ax.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
        elif chart_type == "Line":
            if use_seaborn.get():
                sns.lineplot(x=x_column, y=y_column, data=dataset, ax=ax)
            else:
                ax.plot(dataset[x_column], dataset[y_column])
-           ax.set_xlabel(x_column, fontsize=tick_label_font_size)
-           ax.set_ylabel(y_column, fontsize=tick_label_font_size)
+           ax.set_xlabel(x_column, fontsize=x_tick_label_font_size)
+           ax.set_ylabel(y_column, fontsize=y_tick_label_font_size)
+           ax.tick_params(axis='x', labelsize=x_tick_label_font_size, rotation=x_tick_label_rotation)
+           ax.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
        elif chart_type == "Histogram":
            if use_seaborn.get():
                sns.histplot(data=dataset, x=x_column, ax=ax)
            else:
                ax.hist(dataset[x_column], bins=10)
-           ax.set_xlabel(x_column, fontsize=tick_label_font_size)
-           ax.set_ylabel('Frequency', fontsize=tick_label_font_size)
+           ax.set_xlabel(x_column, fontsize=x_tick_label_font_size)
+           ax.set_ylabel('Frequency', fontsize=y_tick_label_font_size)
+           ax.tick_params(axis='x', labelsize=x_tick_label_font_size, rotation=x_tick_label_rotation)
+           ax.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
        elif chart_type == "Dual Axes":
            ax2 = ax.twinx()
            ax.plot(dataset[x_column], label=x_column, color='skyblue')
            ax2.plot(dataset[y_column], label=y_column, color='darkorange')
-           ax.set_xlabel(x_column, fontsize=tick_label_font_size)
-           ax.set_ylabel(x_column, fontsize=tick_label_font_size)
-           ax2.set_ylabel(y_column, fontsize=tick_label_font_size)
-           ax.tick_params(axis='x', labelsize=tick_label_font_size, rotation=tick_label_rotation)
-           ax.tick_params(axis='y', labelsize=tick_label_font_size)
-           ax2.tick_params(axis='y', labelsize=tick_label_font_size)
+           ax.set_xlabel(x_column, fontsize=x_tick_label_font_size)
+           ax.set_ylabel(x_column, fontsize=y_tick_label_font_size)
+           ax2.set_ylabel(y_column, fontsize=y_tick_label_font_size)
+           ax.tick_params(axis='x', labelsize=x_tick_label_font_size, rotation=x_tick_label_rotation)
+           ax.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
+           ax2.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
 
        ax.set_title(f"{chart_type}: {x_column} vs {y_column}", fontsize=title_font_size)
 
@@ -176,7 +188,7 @@ def clear_selections():
    recommendation_label["text"] = ""
 
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer 1.03")
+root.title("CSV/Excel Data Visualizer v1.01")
 
 frame = ttk.Frame(root, padding="10")
 frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -209,6 +221,46 @@ chart_type_label = ttk.Label(frame, text="Chart Type:")
 chart_type_label.grid(column=0, row=4, padx=10, pady=10)
 chart_type_dropdown = ttk.Combobox(frame)
 chart_type_dropdown.grid(column=1, row=4, padx=10, pady=10)
+
+# Entry for x-axis font size
+x_axis_font_size_label = ttk.Label(frame, text="X-Axis Font Size:")
+x_axis_font_size_label.grid(column=0, row=10, padx=10, pady=10)
+x_axis_font_size_var = tk.StringVar()
+x_axis_font_size_var.set("8")  # Set the default text to 8
+x_axis_font_size_entry = ttk.Entry(frame, textvariable=x_axis_font_size_var)
+x_axis_font_size_entry.grid(column=1, row=10, padx=10, pady=10)
+
+# Entry for y-axis font size
+y_axis_font_size_label = ttk.Label(frame, text="Y-Axis Font Size:")
+y_axis_font_size_label.grid(column=0, row=11, padx=10, pady=10)
+y_axis_font_size_var = tk.StringVar()
+y_axis_font_size_var.set("8")  # Set the default text to 8
+y_axis_font_size_entry = ttk.Entry(frame, textvariable=y_axis_font_size_var)
+y_axis_font_size_entry.grid(column=1, row=11, padx=10, pady=10)
+
+# Adding radio buttons for X-axis tick label rotation selection
+x_tick_label_rotation_var = IntVar()
+x_tick_label_rotation_var.set(45)
+x_tick_label_rotation_label = ttk.Label(frame, text="X-Axis Tick Label Rotation:")
+x_tick_label_rotation_label.grid(column=0, row=12, padx=10, pady=10)
+x_radio_45 = ttk.Radiobutton(frame, text="45", variable=x_tick_label_rotation_var, value=45)
+x_radio_45.grid(column=1, row=12, padx=5, pady=5)
+x_radio_90 = ttk.Radiobutton(frame, text="90", variable=x_tick_label_rotation_var, value=90)
+x_radio_90.grid(column=2, row=12, padx=5, pady=5)
+x_radio_0 = ttk.Radiobutton(frame, text="0", variable=x_tick_label_rotation_var, value=0)
+x_radio_0.grid(column=3, row=12, padx=5, pady=5)
+
+# Adding radio buttons for Y-axis tick label rotation selection
+y_tick_label_rotation_var = IntVar()
+y_tick_label_rotation_var.set(0)
+y_tick_label_rotation_label = ttk.Label(frame, text="Y-Axis Tick Label Rotation:")
+y_tick_label_rotation_label.grid(column=0, row=13, padx=10, pady=10)
+y_radio_45 = ttk.Radiobutton(frame, text="45", variable=y_tick_label_rotation_var, value=45)
+y_radio_45.grid(column=1, row=13, padx=5, pady=5)
+y_radio_90 = ttk.Radiobutton(frame, text="90", variable=y_tick_label_rotation_var, value=90)
+y_radio_90.grid(column=2, row=13, padx=5, pady=5)
+y_radio_0 = ttk.Radiobutton(frame, text="0", variable=y_tick_label_rotation_var, value=0)
+y_radio_0.grid(column=3, row=13, padx=5, pady=5)
 
 # Entry for title/header font size
 title_font_size_label = ttk.Label(frame, text="Title Font Size:")
@@ -250,16 +302,17 @@ recommendation_label.grid(row=10, columnspan=4, pady=10)
 
 # Adding radio buttons for X-axis tick label rotation selection
 tick_label_rotation_var = IntVar()
-tick_label_rotation_var.set(45)  # Default rotation set to 45°
-
+tick_label_rotation_var.set(45)
 tick_label_rotation_label = ttk.Label(frame, text="X-Axis Tick Label Rotation:")
 tick_label_rotation_label.grid(column=0, row=9, padx=10, pady=10)
-radio_45 = ttk.Radiobutton(frame, text="45°", variable=tick_label_rotation_var, value=45)
+radio_45 = ttk.Radiobutton(frame, text="45", variable=tick_label_rotation_var, value=45)
 radio_45.grid(column=1, row=9, padx=5, pady=5)
-radio_90 = ttk.Radiobutton(frame, text="90°", variable=tick_label_rotation_var, value=90)
+radio_90 = ttk.Radiobutton(frame, text="90", variable=tick_label_rotation_var, value=90)
 radio_90.grid(column=2, row=9, padx=5, pady=5)
-radio_0 = ttk.Radiobutton(frame, text="0°", variable=tick_label_rotation_var, value=0)
+radio_0 = ttk.Radiobutton(frame, text="0", variable=tick_label_rotation_var, value=0)
 radio_0.grid(column=3, row=9, padx=5, pady=5)
 
 # Your Tkinter GUI main loop
 root.mainloop()
+
+
