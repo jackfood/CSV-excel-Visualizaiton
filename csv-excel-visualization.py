@@ -1,11 +1,15 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from tkinter import filedialog, messagebox, ttk, IntVar
+from tkinter import filedialog, messagebox, ttk, Listbox, MULTIPLE, IntVar
 import tkinter as tk
 import numpy as np
 from PIL import Image, ImageTk
 import os
+
+global x_selected_fields, y_selected_fields
+x_selected_fields = []
+y_selected_fields = []
 
 def load_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV and Excel Files", "*.csv;*.xlsx")])
@@ -31,34 +35,41 @@ def update_dropdowns(data):
     global dataset
     dataset = data
     column_names = dataset.columns.tolist()
-    x_axis_dropdown["values"] = column_names
-    y_axis_dropdown["values"] = column_names
+    x_axis_listbox.delete(0, tk.END)
+    y_axis_listbox.delete(0, tk.END)
+    for col in column_names:
+        x_axis_listbox.insert(tk.END, col)
+        y_axis_listbox.insert(tk.END, col)
     chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
 
-def recommend_chart(event=None):
-    if x_axis_dropdown.get() and y_axis_dropdown.get():
-        x_column = x_axis_dropdown.get()
-        y_column = y_axis_dropdown.get()
-        recommendation = advanced_chart_recommendation(x_column, y_column, dataset)
+def store_x_axis_selection():
+    global x_selected_fields
+    x_selected_fields = [x_axis_listbox.get(idx) for idx in x_axis_listbox.curselection()]
+    if x_selected_fields:
+        x_axis_label["text"] = f"X Axis (Selected: {', '.join(x_selected_fields)}):"
+
+def store_y_axis_selection():
+    global y_selected_fields
+    y_selected_fields = [y_axis_listbox.get(idx) for idx in y_axis_listbox.curselection()]
+    if y_selected_fields:
+        y_axis_label["text"] = f"Y Axis (Selected: {', '.join(y_selected_fields)}):"
+
+def recommend_chart():
+    if x_selected_fields and y_selected_fields:
+        recommendation = advanced_chart_recommendation(x_selected_fields, y_selected_fields, dataset)
         recommendation_label["text"] = f"Recommended Chart: {recommendation}"
         chart_type_dropdown.set(recommendation)
-        x_axis_label["text"] = f"X Axis ({get_data_type(dataset[x_column].dtype, x_column)}):"
-        y_axis_label["text"] = f"Y Axis ({get_data_type(dataset[y_column].dtype, y_column)}):"
-
-def get_data_type(dtype, column):
-    if np.issubdtype(dtype, np.number):
-        return "Number"
-    elif dataset[column].nunique() <= 10:
-        return "Categorical"
     else:
-        return "Non-categorical"
+        recommendation_label["text"] = "Please select at least one field for both X and Y axes."
 
-def advanced_chart_recommendation(x_column, y_column, dataset):
-    x_dtype = dataset[x_column].dtype
-    y_dtype = dataset[y_column].dtype
-    x_unique_count = dataset[x_column].nunique()
-    y_unique_count = dataset[y_column].nunique()
+def advanced_chart_recommendation(x_columns, y_columns, dataset):
+    x_dtype = dataset[x_columns[0]].dtype
+    y_dtype = dataset[y_columns[0]].dtype
+    x_unique_count = dataset[x_columns[0]].nunique()
+    y_unique_count = dataset[y_columns[0]].nunique()
     
+    if len(x_columns) > 1 or len(y_columns) > 1:
+        return "Line"
     if pd.api.types.is_numeric_dtype(x_dtype) and pd.api.types.is_numeric_dtype(y_dtype):
         return "Scatter Plot" if len(dataset) > 1000 else "Line"
     elif isinstance(x_dtype, pd.CategoricalDtype) or pd.api.types.is_object_dtype(x_dtype):
@@ -71,8 +82,10 @@ def advanced_chart_recommendation(x_column, y_column, dataset):
 def generate_visualization():
     try:
         chart_type = chart_type_dropdown.get()
-        x_column = x_axis_dropdown.get()
-        y_column = y_axis_dropdown.get()
+
+        if not x_selected_fields or not y_selected_fields:
+            messagebox.showerror("Error", "Please select at least one field for both X and Y axes.")
+            return
 
         title_font_size = int(title_font_size_var.get())
         x_tick_label_font_size = int(x_axis_font_size_var.get())
@@ -86,36 +99,38 @@ def generate_visualization():
 
         if chart_type == "Bar" or chart_type == "Column":
             if use_seaborn.get():
-                sns.barplot(x=x_column, y=y_column, data=dataset, ax=ax, orient='h' if chart_type == "Column" else 'v')
+                sns.barplot(x=x_selected_fields[0], y=y_selected_fields[0], data=dataset, ax=ax, orient='h' if chart_type == "Column" else 'v')
             else:
                 if chart_type == "Bar":
-                    ax.bar(dataset[x_column], dataset[y_column], color='skyblue')
+                    ax.bar(dataset[x_selected_fields[0]], dataset[y_selected_fields[0]], color='skyblue')
                 else:
-                    ax.barh(dataset[x_column], dataset[y_column], color='skyblue')
+                    ax.barh(dataset[x_selected_fields[0]], dataset[y_selected_fields[0]], color='skyblue')
         elif chart_type == "Area":
-            ax.fill_between(range(len(dataset[x_column])), dataset[y_column])
+            ax.fill_between(range(len(dataset[x_selected_fields[0]])), dataset[y_selected_fields[0]])
         elif chart_type == "Stacked Bar":
-            crosstab = pd.crosstab(dataset[x_column], dataset[y_column])
+            crosstab = pd.crosstab(dataset[x_selected_fields[0]], dataset[y_selected_fields[0]])
             crosstab.plot(kind='bar', stacked=True, ax=ax)
         elif chart_type == "Scatter Plot":
-            sns.scatterplot(x=x_column, y=y_column, data=dataset, ax=ax) if use_seaborn.get() else ax.scatter(dataset[x_column], dataset[y_column])
+            sns.scatterplot(x=x_selected_fields[0], y=y_selected_fields[0], data=dataset, ax=ax) if use_seaborn.get() else ax.scatter(dataset[x_selected_fields[0]], dataset[y_selected_fields[0]])
         elif chart_type == "Line":
-            sns.lineplot(x=x_column, y=y_column, data=dataset, ax=ax) if use_seaborn.get() else ax.plot(dataset[x_column], dataset[y_column])
+            for y_col in y_selected_fields:
+                sns.lineplot(x=x_selected_fields[0], y=y_col, data=dataset, ax=ax) if use_seaborn.get() else ax.plot(dataset[x_selected_fields[0]], dataset[y_col], label=y_col)
+            ax.legend()
         elif chart_type == "Histogram":
-            sns.histplot(data=dataset, x=x_column, ax=ax) if use_seaborn.get() else ax.hist(dataset[x_column], bins=10)
+            sns.histplot(data=dataset, x=x_selected_fields[0], ax=ax) if use_seaborn.get() else ax.hist(dataset[x_selected_fields[0]], bins=10)
         elif chart_type == "Dual Axes":
             ax2 = ax.twinx()
-            ax.plot(dataset[x_column], label=x_column, color='skyblue')
-            ax2.plot(dataset[y_column], label=y_column, color='darkorange')
-            ax2.set_ylabel(y_column, fontsize=y_tick_label_font_size)
+            ax.plot(dataset[x_selected_fields[0]], label=x_selected_fields[0], color='skyblue')
+            ax2.plot(dataset[y_selected_fields[0]], label=y_selected_fields[0], color='darkorange')
+            ax2.set_ylabel(y_selected_fields[0], fontsize=y_tick_label_font_size)
         elif chart_type == "Box Plot":
-            sns.boxplot(x=x_column, y=y_column, data=dataset, ax=ax) if use_seaborn.get() else ax.boxplot([dataset[x_column], dataset[y_column]])
+            sns.boxplot(x=x_selected_fields[0], y=y_selected_fields[0], data=dataset, ax=ax) if use_seaborn.get() else ax.boxplot([dataset[x_selected_fields[0]], dataset[y_selected_fields[0]]])
         elif chart_type == "Pie Chart":
-            dataset[y_column].value_counts().plot.pie(ax=ax, autopct='%1.1f%%')
+            dataset[y_selected_fields[0]].value_counts().plot.pie(ax=ax, autopct='%1.1f%%')
 
-        ax.set_xlabel(x_column, fontsize=x_tick_label_font_size)
-        ax.set_ylabel(y_column, fontsize=y_tick_label_font_size)
-        ax.set_title(f"{chart_type}: {x_column} vs {y_column}", fontsize=title_font_size)
+        ax.set_xlabel(x_selected_fields[0], fontsize=x_tick_label_font_size)
+        ax.set_ylabel(", ".join(y_selected_fields), fontsize=y_tick_label_font_size)
+        ax.set_title(f"{chart_type}: {', '.join(x_selected_fields)} vs {', '.join(y_selected_fields)}", fontsize=title_font_size)
         ax.tick_params(axis='x', labelsize=x_tick_label_font_size, rotation=x_tick_label_rotation)
         ax.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
         plt.tight_layout()
@@ -125,15 +140,19 @@ def generate_visualization():
         messagebox.showerror("Error", str(e))
 
 def clear_selections():
-    x_axis_dropdown.set("")
-    y_axis_dropdown.set("")
+    global x_selected_fields, y_selected_fields
+    x_axis_listbox.selection_clear(0, tk.END)
+    y_axis_listbox.selection_clear(0, tk.END)
+    x_selected_fields = []
+    y_selected_fields = []
     chart_type_dropdown.set("")
     x_axis_label["text"] = "X Axis:"
     y_axis_label["text"] = "Y Axis:"
     recommendation_label["text"] = ""
 
+# Adding the GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer v1.03")
+root.title("CSV/Excel Data Visualizer v1.1")
 
 frame = ttk.Frame(root, padding="10")
 frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -151,15 +170,19 @@ matplotlib_radio_button.grid(column=2, row=1, padx=10, pady=10)
 
 x_axis_label = ttk.Label(frame, text="X Axis:")
 x_axis_label.grid(column=0, row=2, padx=10, pady=10)
-x_axis_dropdown = ttk.Combobox(frame)
-x_axis_dropdown.grid(column=1, row=2, padx=10, pady=10)
-x_axis_dropdown.bind("<<ComboboxSelected>>", recommend_chart)
+x_axis_listbox = Listbox(frame, selectmode=MULTIPLE, width=30, height=5)
+x_axis_listbox.grid(column=1, row=2, padx=10, pady=10)
+
+store_x_button = ttk.Button(frame, text="Store X-Axis Selection", command=store_x_axis_selection)
+store_x_button.grid(column=2, row=2, padx=10, pady=10)
 
 y_axis_label = ttk.Label(frame, text="Y Axis:")
 y_axis_label.grid(column=0, row=3, padx=10, pady=10)
-y_axis_dropdown = ttk.Combobox(frame)
-y_axis_dropdown.grid(column=1, row=3, padx=10, pady=10)
-y_axis_dropdown.bind("<<ComboboxSelected>>", recommend_chart)
+y_axis_listbox = Listbox(frame, selectmode=MULTIPLE, width=30, height=5)
+y_axis_listbox.grid(column=1, row=3, padx=10, pady=10)
+
+store_y_button = ttk.Button(frame, text="Store Y-Axis Selection", command=store_y_axis_selection)
+store_y_button.grid(column=2, row=3, padx=10, pady=10)
 
 chart_type_label = ttk.Label(frame, text="Chart Type:")
 chart_type_label.grid(column=0, row=4, padx=10, pady=10)
@@ -220,11 +243,14 @@ chart_size_radio2.grid(column=2, row=7, padx=5, pady=5)
 chart_size_radio3 = ttk.Radiobutton(frame, text="Large", variable=chart_size, value="Large")
 chart_size_radio3.grid(column=3, row=7, padx=5, pady=5)
 
+recommendation_button = ttk.Button(frame, text="Update Recommendation", command=recommend_chart)
+recommendation_button.grid(column=0, row=8, padx=10, pady=10)
+
 visualize_button = ttk.Button(frame, text="Visualize", command=generate_visualization)
-visualize_button.grid(column=0, row=8, padx=10, pady=10)
+visualize_button.grid(column=1, row=8, padx=10, pady=10)
 
 clear_button = ttk.Button(frame, text="Clear", command=clear_selections)
-clear_button.grid(column=1, row=8, padx=10, pady=10)
+clear_button.grid(column=2, row=8, padx=10, pady=10)
 
 recommendation_label = ttk.Label(frame, text="")
 recommendation_label.grid(row=10, columnspan=4, pady=10)
