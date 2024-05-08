@@ -1,9 +1,12 @@
+
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tkinter import filedialog, messagebox, ttk, Listbox, MULTIPLE, IntVar
 import tkinter as tk
 import numpy as np
+from scipy.stats import norm, skew
 from PIL import Image, ImageTk
 import os
 
@@ -86,11 +89,18 @@ def advanced_chart_recommendation(x_columns, y_columns, dataset):
         return "Bar"
     return "Scatter Plot"
 
+
 def generate_visualization():
     try:
-        if not x_selected_fields or not y_selected_fields:
-            messagebox.showerror("Error", "Select at least one field for both X and Y axes.")
-            return
+        chart_type = chart_type_dropdown.get()
+        if chart_type == "Histogram":
+            if len(x_selected_fields) != 1 and len(y_selected_fields) != 1:
+                messagebox.showerror("Error", "Select only one field for the Histogram.")
+                return
+        else:
+            if not x_selected_fields or not y_selected_fields:
+                messagebox.showerror("Error", "Select at least one field for both X and Y axes.")
+                return
 
         title_font_size = int(title_font_size_var.get())
         x_tick_label_font_size = int(x_axis_font_size_var.get())
@@ -98,13 +108,14 @@ def generate_visualization():
         x_tick_label_rotation = x_tick_label_rotation_var.get()
         y_tick_label_rotation = y_tick_label_rotation_var.get()
 
-        # Ask user to choose between generating all charts or just the selected chart
+        light_colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
+
         generate_all = messagebox.askyesno("Generate Charts", "Do you want to generate all chart types?")
 
         if generate_all:
             chart_types = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
         else:
-            chart_types = [chart_type_dropdown.get()]
+            chart_types = [chart_type]
 
         for chart_type in chart_types:
             fig, ax = plt.subplots(figsize=get_chart_size())
@@ -114,38 +125,69 @@ def generate_visualization():
             try:
                 plot_data = dataset[list(set(x_selected_fields + y_selected_fields))]
                 if chart_type in ["Bar", "Column"]:
+                    x = plot_data[x_selected_fields[0]]
+                    y = plot_data[y_selected_fields[0]]
+                    bar_width = 0.8  # Adjust this value for seamless bars
                     if use_seaborn.get():
-                        sns.barplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, orient='v' if chart_type == "Bar" else 'h')
+                        sns.barplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, palette=light_colors, orient='v' if chart_type == "Bar" else 'h')
                     else:
-                        ax.bar(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], color='skyblue') if chart_type == "Bar" else ax.barh(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], color='skyblue')
+                        if chart_type == "Bar":
+                            ax.bar(x, y, width=bar_width, color=light_colors[0])
+                        else:
+                            ax.barh(x, y, height=bar_width, color=light_colors[0])
+
+                    ax.set_xticks(range(len(x)))
+                    ax.set_xticklabels(x, rotation=x_tick_label_rotation, fontsize=x_tick_label_font_size)
+
                 elif chart_type == "Area":
-                    ax.fill_between(range(len(plot_data)), plot_data[y_selected_fields[0]], color='skyblue', alpha=0.3)
+                    for y_col in y_selected_fields:
+                        ax.fill_between(plot_data[x_selected_fields[0]], plot_data[y_col], alpha=0.3, label=y_col, color=light_colors[y_selected_fields.index(y_col) % len(light_colors)])
+                    ax.legend()
                 elif chart_type == "Stacked Bar":
-                    crosstab = pd.crosstab(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]])
-                    crosstab.plot(kind='bar', stacked=True, ax=ax)
+                    crosstab_data = plot_data.groupby(x_selected_fields[0])[y_selected_fields].sum()
+                    crosstab_data.plot(kind='bar', stacked=True, ax=ax, color=light_colors[:len(y_selected_fields)])
+                    ax.set_xticks(range(len(crosstab_data.index)))
+                    ax.set_xticklabels(crosstab_data.index, rotation=x_tick_label_rotation, fontsize=x_tick_label_font_size)
                 elif chart_type == "Scatter Plot":
-                    sns.scatterplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax) if use_seaborn.get() else ax.scatter(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]])
+                    sns.scatterplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, palette=light_colors) if use_seaborn.get() else ax.scatter(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], color=light_colors[0])
                 elif chart_type == "Line":
                     for y_col in y_selected_fields:
-                        sns.lineplot(data=plot_data, x=x_selected_fields[0], y=y_col, ax=ax) if use_seaborn.get() else ax.plot(plot_data[x_selected_fields[0]], plot_data[y_col], label=y_col)
+                        sns.lineplot(data=plot_data, x=x_selected_fields[0], y=y_col, ax=ax, color=light_colors[y_selected_fields.index(y_col) % len(light_colors)]) if use_seaborn.get() else ax.plot(plot_data[x_selected_fields[0]], plot_data[y_col], label=y_col, color=light_colors[y_selected_fields.index(y_col) % len(light_colors)])
                     ax.legend()
                 elif chart_type == "Histogram":
-                    sns.histplot(data=plot_data, x=x_selected_fields[0], ax=ax) if use_seaborn.get() else ax.hist(plot_data[x_selected_fields[0]], bins=10)
+                    if len(x_selected_fields) == 1:
+                        data = plot_data[x_selected_fields[0]]
+                    else:
+                        data = plot_data[y_selected_fields[0]]
+                    
+                    bins = np.histogram_bin_edges(data, bins=10)
+                    bin_width = bins[1] - bins[0]
+
+                    ax.hist(data, bins=bins, color=light_colors[0], alpha=0.7, density=True, edgecolor='black', align='mid', rwidth=1.0)
+                    mean_value = data.mean()
+                    std_dev = data.std()
+                    skew_value = data.skew()
+                    x = np.linspace(data.min(), data.max(), 100)
+                    ax.plot(x, norm.pdf(x, mean_value, std_dev), color='blue', linewidth=1)
+                    ax.axvline(mean_value, color='red', linewidth=1)
+                    skew_text = f"Mean: {mean_value:.2f}\nSkew: {skew_value:.2f}"
+                    ax.text(0.95, 0.95, skew_text, transform=ax.transAxes, fontsize=8, verticalalignment='top', horizontalalignment='right', bbox=dict(facecolor='white', alpha=0.7, edgecolor='black'))
                 elif chart_type == "Dual Axes":
                     ax2 = ax.twinx()
-                    ax.plot(plot_data[x_selected_fields[0]], label=x_selected_fields[0], color='skyblue')
-                    ax2.plot(plot_data[y_selected_fields[0]], label=y_selected_fields[0], color='darkorange')
+                    ax.plot(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], label=x_selected_fields[0], color=light_colors[0])
+                    ax2.plot(plot_data[y_selected_fields[0]], label=y_selected_fields[0], color=light_colors[1])
                     ax2.set_ylabel(", ".join(y_selected_fields), fontsize=y_tick_label_font_size)
                 elif chart_type == "Box Plot":
-                    sns.boxplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax) if use_seaborn.get() else ax.boxplot([plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]]])
+                    sns.boxplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, palette=light_colors) if use_seaborn.get() else ax.boxplot([plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]]])
                 elif chart_type == "Pie Chart":
-                    plot_data[y_selected_fields[0]].value_counts().plot.pie(ax=ax, autopct='%1.1f%%')
+                    plot_data[y_selected_fields[0]].value_counts().plot.pie(ax=ax, autopct='%1.1f%%', colors=light_colors)
 
                 ax.set_xlabel(", ".join(x_selected_fields), fontsize=x_tick_label_font_size)
                 ax.set_ylabel(", ".join(y_selected_fields), fontsize=y_tick_label_font_size)
                 ax.set_title(f"{chart_type}: {', '.join(x_selected_fields)} vs {', '.join(y_selected_fields)}", fontsize=title_font_size)
                 ax.tick_params(axis='x', labelsize=x_tick_label_font_size, rotation=x_tick_label_rotation)
                 ax.tick_params(axis='y', labelsize=y_tick_label_font_size, rotation=y_tick_label_rotation)
+
                 plt.tight_layout()
                 plt.show()
 
@@ -168,7 +210,7 @@ def clear_selections():
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer v1.31")
+root.title("CSV/Excel Data Visualizer v1.35")
 
 frame = ttk.Frame(root, padding="10")
 frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
