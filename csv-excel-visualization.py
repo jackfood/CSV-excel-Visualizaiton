@@ -1,9 +1,7 @@
-
-
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from tkinter import filedialog, messagebox, ttk, Listbox, MULTIPLE, IntVar
+from tkinter import filedialog, messagebox, ttk, Listbox, MULTIPLE, IntVar, StringVar, Checkbutton
 import tkinter as tk
 import numpy as np
 from scipy.stats import norm, skew
@@ -45,22 +43,44 @@ def update_dropdowns(data):
         x_axis_listbox.insert(tk.END, col)
         y_axis_listbox.insert(tk.END, col)
     chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
+    update_options_based_on_chart_type()
+
+def update_options_based_on_chart_type():
+    chart_type = chart_type_dropdown.get()
+    if chart_type == "Histogram":
+        skew_line_checkbutton.config(state=tk.NORMAL)
+        aggression_checkbutton.config(state=tk.DISABLED)
+    elif chart_type == "Scatter Plot":
+        aggression_checkbutton.config(state=tk.NORMAL)
+        skew_line_checkbutton.config(state=tk.DISABLED)
+    else:
+        aggression_checkbutton.config(state=tk.DISABLED)
+        skew_line_checkbutton.config(state=tk.DISABLED)
 
 def store_x_axis_selection():
     global x_selected_fields
     x_selected_fields = [x_axis_listbox.get(idx) for idx in x_axis_listbox.curselection()]
     x_axis_label["text"] = f"X Axis (Selected: {', '.join(x_selected_fields)}):" if x_selected_fields else "X Axis:"
+    update_options_based_on_selection()
 
 def store_y_axis_selection():
     global y_selected_fields
     y_selected_fields = [y_axis_listbox.get(idx) for idx in y_axis_listbox.curselection()]
     y_axis_label["text"] = f"Y Axis (Selected: {', '.join(y_selected_fields)}):" if y_selected_fields else "Y Axis:"
+    update_options_based_on_selection()
+
+def update_options_based_on_selection():
+    if x_selected_fields and y_selected_fields and all(dataset[col].dtype.kind in 'fi' for col in x_selected_fields + y_selected_fields):
+        aggression_checkbutton.config(state=tk.NORMAL)
+    else:
+        aggression_checkbutton.config(state=tk.DISABLED)
 
 def recommend_chart():
     if x_selected_fields and y_selected_fields:
         recommendation = advanced_chart_recommendation(x_selected_fields, y_selected_fields, dataset)
         recommendation_label["text"] = f"Recommended Chart: {recommendation}"
         chart_type_dropdown.set(recommendation)
+        update_options_based_on_chart_type()
     else:
         recommendation_label["text"] = "Select fields for X and Y axes."
 
@@ -88,7 +108,6 @@ def advanced_chart_recommendation(x_columns, y_columns, dataset):
             return "Pie Chart"
         return "Bar"
     return "Scatter Plot"
-
 
 def generate_visualization():
     try:
@@ -143,42 +162,71 @@ def generate_visualization():
                     for y_col in y_selected_fields:
                         ax.fill_between(plot_data[x_selected_fields[0]], plot_data[y_col], alpha=0.3, label=y_col, color=light_colors[y_selected_fields.index(y_col) % len(light_colors)])
                     ax.legend()
+
                 elif chart_type == "Stacked Bar":
                     crosstab_data = plot_data.groupby(x_selected_fields[0])[y_selected_fields].sum()
                     crosstab_data.plot(kind='bar', stacked=True, ax=ax, color=light_colors[:len(y_selected_fields)])
                     ax.set_xticks(range(len(crosstab_data.index)))
                     ax.set_xticklabels(crosstab_data.index, rotation=x_tick_label_rotation, fontsize=x_tick_label_font_size)
+
                 elif chart_type == "Scatter Plot":
-                    sns.scatterplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, palette=light_colors) if use_seaborn.get() else ax.scatter(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], color=light_colors[0])
+                    if use_seaborn.get():
+                        sns.scatterplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, color=light_colors[0])
+                    else:
+                        ax.scatter(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], color=light_colors[0])
+
+                    # Check if the user wants to display the aggression line
+                    if display_aggression.get():
+                        # Fit a linear regression (aggression line)
+                        from scipy.stats import linregress
+                        x_data = plot_data[x_selected_fields[0]]
+                        y_data = plot_data[y_selected_fields[0]]
+                        slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
+                        
+                        # Plot the aggression line
+                        ax.plot(x_data, intercept + slope * x_data, color="lightpink", label=f'Aggression Line: y={intercept:.2f}+{slope:.2f}x')
+                        # Place a text box with the aggression value
+                        textstr = f'Slope: {slope:.2f}'
+                        props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+                        ax.text(0.95, 0.05, textstr, transform=ax.transAxes, fontsize=8, verticalalignment='bottom', horizontalalignment='right', bbox=props)
+
                 elif chart_type == "Line":
                     for y_col in y_selected_fields:
                         sns.lineplot(data=plot_data, x=x_selected_fields[0], y=y_col, ax=ax, color=light_colors[y_selected_fields.index(y_col) % len(light_colors)]) if use_seaborn.get() else ax.plot(plot_data[x_selected_fields[0]], plot_data[y_col], label=y_col, color=light_colors[y_selected_fields.index(y_col) % len(light_colors)])
                     ax.legend()
+
                 elif chart_type == "Histogram":
                     if len(x_selected_fields) == 1:
                         data = plot_data[x_selected_fields[0]]
                     else:
                         data = plot_data[y_selected_fields[0]]
-                    
-                    bins = np.histogram_bin_edges(data, bins=10)
-                    bin_width = bins[1] - bins[0]
 
-                    ax.hist(data, bins=bins, color=light_colors[0], alpha=0.7, density=True, edgecolor='black', align='mid', rwidth=1.0)
+                    bins = np.histogram_bin_edges(data, bins='auto')
+                    ax.hist(data, bins=bins, color=light_colors[0], alpha=0.7, density=True, edgecolor='black', align='mid', rwidth=0.9)
+
                     mean_value = data.mean()
                     std_dev = data.std()
-                    skew_value = data.skew()
-                    x = np.linspace(data.min(), data.max(), 100)
-                    ax.plot(x, norm.pdf(x, mean_value, std_dev), color='blue', linewidth=1)
-                    ax.axvline(mean_value, color='red', linewidth=1)
-                    skew_text = f"Mean: {mean_value:.2f}\nSkew: {skew_value:.2f}"
-                    ax.text(0.95, 0.95, skew_text, transform=ax.transAxes, fontsize=8, verticalalignment='top', horizontalalignment='right', bbox=dict(facecolor='white', alpha=0.7, edgecolor='black'))
+                    skew_value = skew(data)
+                    x = np.linspace(min(data), max(data), 100)
+                    ax.plot(x, norm.pdf(x, mean_value, std_dev), color='blue', linewidth=1, label='Normal Distribution')
+
+                    if display_skew.get():
+                        skew_text = f"Mean: {mean_value:.2f}, Std Dev: {std_dev:.2f}, Skew: {skew_value:.2f}"
+                        props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+                        ax.text(0.95, 0.95, skew_text, transform=ax.transAxes, fontsize=8, verticalalignment='top', horizontalalignment='right', bbox=props)
+
                 elif chart_type == "Dual Axes":
                     ax2 = ax.twinx()
                     ax.plot(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], label=x_selected_fields[0], color=light_colors[0])
                     ax2.plot(plot_data[y_selected_fields[0]], label=y_selected_fields[0], color=light_colors[1])
                     ax2.set_ylabel(", ".join(y_selected_fields), fontsize=y_tick_label_font_size)
+
                 elif chart_type == "Box Plot":
-                    sns.boxplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, palette=light_colors) if use_seaborn.get() else ax.boxplot([plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]]])
+                    if use_seaborn.get():
+                        sns.boxplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, palette=light_colors)
+                    else:
+                        ax.boxplot([plot_data[col] for col in x_selected_fields + y_selected_fields])
+
                 elif chart_type == "Pie Chart":
                     plot_data[y_selected_fields[0]].value_counts().plot.pie(ax=ax, autopct='%1.1f%%', colors=light_colors)
 
@@ -210,7 +258,7 @@ def clear_selections():
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer v1.35")
+root.title("CSV/Excel Data Visualizer v1.4")
 
 frame = ttk.Frame(root, padding="10")
 frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -246,6 +294,7 @@ chart_type_label = ttk.Label(frame, text="Chart Type:")
 chart_type_label.grid(column=0, row=4, padx=10, pady=10)
 chart_type_dropdown = ttk.Combobox(frame)
 chart_type_dropdown.grid(column=1, row=4, padx=10, pady=10)
+chart_type_dropdown.bind("<<ComboboxSelected>>", lambda event: update_options_based_on_chart_type())
 
 title_font_size_label = ttk.Label(frame, text="Title Font Size:")
 title_font_size_label.grid(column=0, row=5, padx=10, pady=10)
@@ -312,5 +361,19 @@ clear_button.grid(column=2, row=11, padx=10, pady=10)
 
 recommendation_label = ttk.Label(frame, text="")
 recommendation_label.grid(row=12, column=0, columnspan=4, padx=10, pady=10)
+
+# Checkbox for Display Aggression Line in Scatter Plot
+display_aggression = IntVar()
+aggression_checkbutton = Checkbutton(frame, text="Display Aggression Line", variable=display_aggression)
+aggression_checkbutton.grid(column=1, row=13, padx=10, pady=10)
+
+# Checkbox for Display Skew Line in Histogram
+display_skew = IntVar()
+skew_line_checkbutton = Checkbutton(frame, text="Display Skew Line", variable=display_skew)
+skew_line_checkbutton.grid(column=1, row=14, padx=10, pady=10)
+
+# Initial state setup for these options
+aggression_checkbutton.config(state=tk.DISABLED)
+skew_line_checkbutton.config(state=tk.DISABLED)
 
 root.mainloop()
