@@ -177,15 +177,12 @@ def generate_visualization():
 
                     # Check if the user wants to display the aggression line
                     if display_aggression.get():
-                        # Fit a linear regression (aggression line)
                         from scipy.stats import linregress
                         x_data = plot_data[x_selected_fields[0]]
                         y_data = plot_data[y_selected_fields[0]]
                         slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
                         
-                        # Plot the aggression line
                         ax.plot(x_data, intercept + slope * x_data, color="lightpink", label=f'Aggression Line: y={intercept:.2f}+{slope:.2f}x')
-                        # Place a text box with the aggression value
                         textstr = f'Slope: {slope:.2f}'
                         props = dict(boxstyle='round', facecolor='white', alpha=0.5)
                         ax.text(0.95, 0.05, textstr, transform=ax.transAxes, fontsize=8, verticalalignment='bottom', horizontalalignment='right', bbox=props)
@@ -201,19 +198,20 @@ def generate_visualization():
                     else:
                         data = plot_data[y_selected_fields[0]]
 
-                    bins = np.histogram_bin_edges(data, bins='auto')
-                    ax.hist(data, bins=bins, color=light_colors[0], alpha=0.7, density=True, edgecolor='black', align='mid', rwidth=0.9)
-
+                    sns.histplot(data, kde=True, color='blue', bins=20, ax=ax)
                     mean_value = data.mean()
                     std_dev = data.std()
                     skew_value = skew(data)
-                    x = np.linspace(min(data), max(data), 100)
-                    ax.plot(x, norm.pdf(x, mean_value, std_dev), color='blue', linewidth=1, label='Normal Distribution')
+
+                    ax.set_xlabel(", ".join(x_selected_fields), fontsize=x_tick_label_font_size)
+                    ax.set_ylabel("Density", fontsize=y_tick_label_font_size)
+                    ax.set_title(f"Histogram: {', '.join(x_selected_fields)}", fontsize=title_font_size)
+                    ax.grid(axis='y', linestyle='--', alpha=0.7)
 
                     if display_skew.get():
                         skew_text = f"Mean: {mean_value:.2f}, Std Dev: {std_dev:.2f}, Skew: {skew_value:.2f}"
-                        props = dict(boxstyle='round', facecolor='white', alpha=0.5)
-                        ax.text(0.95, 0.95, skew_text, transform=ax.transAxes, fontsize=8, verticalalignment='top', horizontalalignment='right', bbox=props)
+                        props = dict(boxstyle='round', facecolor='white', alpha=0.8)
+                        ax.text(0.95, 0.95, skew_text, transform=ax.transAxes, fontsize=12, verticalalignment='top', horizontalalignment='right', bbox=props)
 
                 elif chart_type == "Dual Axes":
                     ax2 = ax.twinx()
