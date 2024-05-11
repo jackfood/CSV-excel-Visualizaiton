@@ -1,3 +1,5 @@
+# Fix this error visualization failed: ufunc 'substract' did not contain a loop with signature matching types (dtype('<U29'), dtype('<30')) -> none upon clicking generate all charts and/ or generate bar. Only write the affected code, DO NOT WRITE THE WHOLE CODE.
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -10,7 +12,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer v1.5.1.0511")
+root.title("CSV/Excel Data Visualizer v1.5.2.0511.2")
 
 global x_selected_fields, y_selected_fields, dataset
 x_selected_fields = []
@@ -19,96 +21,60 @@ dataset = pd.DataFrame()
 display_skew = IntVar()
 display_aggression = IntVar()
 
-# Helper dialog function to ask for custom bins
 def ask_for_histogram_customization(data):
-    """
-    Ask the user for custom histogram settings with recommended default values.
-    
-    Parameters:
-    - data: The dataset from which to derive the default min, max, and number of bins.
-    
-    Returns:
-    - tuple (bool, list of bin edges) if custom settings are used,
-    - (False, None) if default settings should be used.
-    """
     # Determine the default values based on the data
     data_min, data_max = data.min(), data.max()
     bin_width = 2 * (np.percentile(data, 75) - np.percentile(data, 25)) * len(data) ** (-1/3)
     default_bins = max(1, int((data_max - data_min) / bin_width))
-    
-    # Initial message to the user
-    response = messagebox.askyesno(
-        "Customize Histogram", 
-        f"Do you want to customize the histogram range and bins?\n\n"
-        f"Suggested range: {data_min:.2f} to {data_max:.2f}\n"
-        f"Suggested number of bins: {default_bins}"
-    )
 
-    if response:
+    if enable_customization.get():
         while True:
             try:
-                # Asking for the minimum edge with a default suggestion
-                min_edge = simpledialog.askfloat(
-                    "Minimum Edge", 
-                    f"Enter the minimum value of the range (suggested: {data_min:.2f}):",
-                    initialvalue=data_min
-                )
+                min_edge = simpledialog.askfloat("Histogram - Minimum Edge", f"Enter the minimum value of the range (suggested: {data_min:.2f}):", initialvalue=data_min, parent=root)
+                max_edge = simpledialog.askfloat("Histogram - Maximum Edge", f"Enter the maximum value of the range (suggested: {data_max:.2f}):", initialvalue=data_max, parent=root)
+                num_bins = simpledialog.askinteger("Histogram - Number of Bins", f"Enter the number of bins (suggested: {default_bins}):", initialvalue=default_bins, parent=root)
 
-                # Asking for the maximum edge with a default suggestion
-                max_edge = simpledialog.askfloat(
-                    "Maximum Edge", 
-                    f"Enter the maximum value of the range (suggested: {data_max:.2f}):",
-                    initialvalue=data_max
-                )
-
-                # Asking for the number of bins with a default suggestion
-                num_bins = simpledialog.askinteger(
-                    "Number of Bins", 
-                    f"Enter the number of bins (suggested: {default_bins}):",
-                    initialvalue=default_bins
-                )
-
-                # Validating the user's input
                 if min_edge is None or max_edge is None or num_bins is None:
-                    messagebox.showwarning("Invalid Input", "You must provide all inputs. Using default settings.")
+                    messagebox.showwarning("Histogram - Invalid Input", "You must provide all inputs. Using default settings.", parent=root)
                     return (False, None)
 
                 if min_edge >= max_edge:
-                    messagebox.showerror("Error", "Minimum edge must be less than maximum edge.")
+                    messagebox.showerror("Histogram - Error", "Minimum edge must be less than maximum edge.", parent=root)
                     continue
 
                 if num_bins <= 0:
-                    messagebox.showerror("Error", "Number of bins must be positive.")
+                    messagebox.showerror("Histogram - Error", "Number of bins must be positive.", parent=root)
                     continue
 
-                # Generate the bin edges based on user input
                 bin_edges = np.linspace(min_edge, max_edge, num_bins + 1)
                 return (True, bin_edges)
 
             except ValueError:
-                messagebox.showerror("Error", "Please enter valid numbers.")
+                messagebox.showerror("Histogram - Error", "Please enter valid numbers.", parent=root)
                 continue
 
     return (False, None)
 
+# Function to ask for bar customization
 def ask_for_bar_customization():
-    """
-    Prompt the user to customize the bar chart's sorting order and the number of top items to display.
-    """
-    response = messagebox.askyesno("Customize Bar Chart", "Do you want to customize the bar chart settings?")
-    if response:
-        order = simpledialog.askstring("Sorting Order", "Enter 'asc' for ascending or 'desc' for descending:")
-        if order not in ['asc', 'desc']:
-            messagebox.showerror("Error", "Invalid order. Please enter 'asc' or 'desc'.")
-            return None, None
+    if enable_customization.get():
+        while True:
+            order = simpledialog.askstring("Bar - Sorting Order", "Enter 'asc' for ascending or 'desc' for descending:", parent=root)
+            if order not in ['asc', 'desc', None]:  # Handle None for dialog cancellation
+                messagebox.showerror("Error", "Invalid order. Please enter 'asc' or 'desc'.", parent=root)
+                continue
 
-        max_items = simpledialog.askinteger("Number of Items", "Enter the number of top items to display (Max is {}):".format(len(dataset)))
-        if max_items is None or max_items < 1 or max_items > len(dataset):
-            messagebox.showerror("Error", "Invalid number of items. Please enter a valid number.")
-            return None, None
+            if order is None:
+                return None, None  # User cancelled
 
-        return order, max_items
-    return None, None
+            max_items = simpledialog.askinteger("Bar - Number of Items", "Enter the number of top items to display (Max is {}):".format(len(dataset)), parent=root)
+            if max_items is None or max_items < 1 or max_items > len(dataset):
+                messagebox.showerror("Bar - Error", "Invalid number of items. Please enter a valid number.", parent=root)
+                continue
+
+            return order, max_items
+    else:
+        return 'desc', min(len(dataset), 10)  # Default order and number of items
 
 def load_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV and Excel Files", "*.csv;*.xlsx")])
@@ -144,6 +110,18 @@ def update_dropdowns(data):
 
 def update_options_based_on_chart_type():
     chart_type = chart_type_dropdown.get()
+
+    # Enable/Disable value display options
+    if chart_type in ["Bar", "Column", "Line", "Stacked Bar", "Histogram"]:
+        display_values_checkbutton.config(state=tk.NORMAL)
+        value_label_font_size_label.config(state=tk.NORMAL)
+        value_label_font_size_entry.config(state=tk.NORMAL)
+    else:
+        display_values_checkbutton.config(state=tk.DISABLED)
+        value_label_font_size_label.config(state=tk.DISABLED)
+        value_label_font_size_entry.config(state=tk.DISABLED)
+
+    # Enable/Disable skew/aggression lines
     if chart_type == "Histogram":
         skew_line_checkbutton.config(state=tk.NORMAL)
         aggression_checkbutton.config(state=tk.DISABLED)
@@ -153,6 +131,15 @@ def update_options_based_on_chart_type():
     else:
         aggression_checkbutton.config(state=tk.DISABLED)
         skew_line_checkbutton.config(state=tk.DISABLED)
+
+def display_values_on_bars(ax, bars, font_size=4):
+    for bar in bars:
+        if isinstance(bar, plt.Line2D):
+            for x, y in zip(bar.get_xdata(), bar.get_ydata()):
+                ax.text(x, y, f'{y:.2f}', ha='center', va='bottom', fontsize=font_size)
+        else:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2.0, height, f'{height:.2f}', ha='center', va='bottom', fontsize=font_size)
 
 def store_x_axis_selection():
     global x_selected_fields
@@ -235,45 +222,55 @@ def advanced_chart_recommendation(x_columns, y_columns, dataset):
 
 def plot_bar(ax, plot_data):
     if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
-        messagebox.showerror("Error", "Bar plot requires exactly one X field and one Y field.")
+        messagebox.showerror("Bar - Error", "Bar plot requires exactly one X field and one Y field.")
         return
 
-    # Ensure y-axis data is numeric
-    if not pd.api.types.is_numeric_dtype(plot_data[y_selected_fields[0]]):
-        messagebox.showerror("Error", "Y-axis data must be numeric (int or float) for bar plots.")
-        return
-
+    # Ensure Y-axis data is numeric
     try:
-        # Aggregating data by the X field
-        # Change 'mean' to 'sum', 'max', 'min', or any other appropriate aggregation
-        aggregated_data = plot_data.groupby(x_selected_fields[0], as_index=False)[y_selected_fields[0]].mean()
+        plot_data[y_selected_fields[0]] = pd.to_numeric(plot_data[y_selected_fields[0]], errors='coerce')
+        if plot_data[y_selected_fields[0]].isnull().any():
+            messagebox.showerror("Bar - Error", "Non-numeric data found in Y-axis field after conversion attempt.")
+            return
 
-        # Ask for customization
+        # Drop rows where Y data could not be converted and resulted in NaN
+        plot_data = plot_data.dropna(subset=[y_selected_fields[0]])
+
+        # Group by X field and calculate mean for Y field
+        aggregated_data = plot_data.groupby(x_selected_fields[0])[y_selected_fields[0]].mean().reset_index()
+
+        # Customize order and number of items if enabled
         order, max_items = ask_for_bar_customization()
-        if order and max_items:
-            aggregated_data = aggregated_data.nlargest(max_items, y_selected_fields[0]) if order == 'desc' else aggregated_data.nsmallest(max_items, y_selected_fields[0])
-        
-        x = aggregated_data[x_selected_fields[0]]
+        if order is None:  # Handle case where customization is not done
+            messagebox.showinfo("Bar - Info", "Using default settings for sorting and item count.")
+            order, max_items = 'desc', min(len(aggregated_data), 10)  # Default settings
+
+        if order == 'desc':
+            aggregated_data = aggregated_data.nlargest(max_items, y_selected_fields[0])
+        else:
+            aggregated_data = aggregated_data.nsmallest(max_items, y_selected_fields[0])
+
+        x = aggregated_data[x_selected_fields[0]].astype(str)
         y = aggregated_data[y_selected_fields[0]]
         bar_width = 0.8
 
-        # Convert x values to strings for labeling purposes
-        x = x.astype(str)
-
         if use_seaborn.get():
-            sns.barplot(data=aggregated_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, color='lightblue', orient='v')
+            bars = sns.barplot(data=aggregated_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, color='lightblue', orient='v')
         else:
-            ax.bar(x, y, width=bar_width, color='lightblue')
+            bars = ax.bar(x, y, width=bar_width, color='lightblue')
 
         ax.set_xticks(range(len(x)))
         ax.set_xticklabels(x, rotation=x_tick_label_rotation_var.get(), fontsize=int(x_axis_font_size_var.get()))
+
+        if display_values.get():
+            font_size = int(value_label_font_size_var.get())
+            display_values_on_bars(ax, bars, font_size=font_size)
 
     except Exception as e:
         messagebox.showerror("Error", f"Failed to plot bar chart: {str(e)}")
 
 def plot_area(ax, plot_data):
     if len(x_selected_fields) != 1:
-        messagebox.showerror("Error", "Area plot requires exactly one X field and multiple Y fields.")
+        messagebox.showerror("Area - Error", "Area plot requires exactly one X field and multiple Y fields.")
         return
     for y_col in y_selected_fields:
         ax.fill_between(plot_data[x_selected_fields[0]], plot_data[y_col], alpha=0.3, label=y_col, color='#66c2a5')
@@ -281,25 +278,40 @@ def plot_area(ax, plot_data):
 
 def plot_stacked_bar(ax, plot_data):
     if len(x_selected_fields) != 1:
-        messagebox.showerror("Error", "Stacked Bar plot requires exactly one X field and multiple Y fields.")
+        messagebox.showerror("Stacked - Error", "Stacked Bar plot requires exactly one X field.")
         return
     if not y_selected_fields:
-        messagebox.showerror("Error", "Stacked Bar plot requires at least one Y field.")
+        messagebox.showerror("Stacked - Error", "Stacked Bar plot requires at least one Y field.")
+        return
+
+    # Check if Y fields are numeric
+    if not all(pd.api.types.is_numeric_dtype(plot_data[col]) for col in y_selected_fields):
+        messagebox.showerror("Stacked - Error", "All Y fields must be numeric for stacked bar plots.")
         return
 
     # Preparing the data for plotting
     crosstab_data = plot_data.groupby(x_selected_fields[0])[y_selected_fields].sum()
+    crosstab_data.fillna(0, inplace=True)  # Replace NaN with 0 for stacking
+
+    bottom = np.zeros(len(crosstab_data))
 
     if use_seaborn.get():
-        # Seaborn doesn't support stacked bars directly, use Matplotlib's functionality
-        bottom = np.zeros(len(crosstab_data))
-        palette = sns.color_palette("husl", len(y_selected_fields))  # Get a color palette from Seaborn
+        # Use Matplotlib directly as Seaborn doesn't support stacked bars
+        palette = sns.color_palette("husl", len(y_selected_fields))
+        bars = []
         for idx, col in enumerate(y_selected_fields):
-            ax.bar(crosstab_data.index, crosstab_data[col], bottom=bottom, label=col, color=palette[idx])
-            bottom += crosstab_data[col].values  # Update the bottom position for the next bar
+            bar = ax.bar(crosstab_data.index, crosstab_data[col], bottom=bottom, label=col, color=palette[idx])
+            bars.append(bar)
+            bottom += crosstab_data[col].values
     else:
         # Directly use Matplotlib's stacked bar functionality
-        crosstab_data.plot(kind='bar', stacked=True, ax=ax, color=sns.color_palette("husl", len(y_selected_fields)))
+        palette = sns.color_palette("husl", len(y_selected_fields))
+        bars = []
+        bottom = np.zeros(len(crosstab_data))
+        for idx, col in enumerate(y_selected_fields):
+            bar = ax.bar(crosstab_data.index, crosstab_data[col], bottom=bottom, label=col, color=palette[idx])
+            bars.append(bar)
+            bottom += crosstab_data[col].values
 
     ax.set_xticks(range(len(crosstab_data.index)))
     ax.set_xticklabels(crosstab_data.index, rotation=x_tick_label_rotation_var.get(), fontsize=int(x_axis_font_size_var.get()))
@@ -307,10 +319,26 @@ def plot_stacked_bar(ax, plot_data):
     ax.set_ylabel("Sum of Values", fontsize=int(y_axis_font_size_var.get()))
     ax.legend(title="Categories")
 
+    # Display values on bars if enabled
+    if display_values.get():
+        font_size = int(value_label_font_size_var.get())
+        for bar_group in bars:
+            for rect in bar_group:
+                height = rect.get_height()
+                if height > 0:
+                    ax.text(
+                        rect.get_x() + rect.get_width() / 2,
+                        rect.get_y() + height,
+                        f'{int(height)}',
+                        ha='center',
+                        va='bottom',
+                        fontsize=font_size
+                    )
+
 def plot_scatter(ax, plot_data):
     # Ensure the columns are numeric and handle NaN values
     if plot_data[x_selected_fields[0]].dtype.kind not in 'fi' or plot_data[y_selected_fields[0]].dtype.kind not in 'fi':
-        messagebox.showerror("Error", "Scatter plot requires numeric data types for both axes.")
+        messagebox.showerror("Scatter Error", "Scatter plot requires numeric data types for both axes.")
         return
 
     # Drop NaN values from the data used in the scatter plot to avoid errors in calculations
@@ -351,7 +379,17 @@ def plot_dual_axes(ax, plot_data):
     ax.legend()
 
 def plot_histogram(ax, plot_data):
+    # Check if a single field is selected
+    if len(x_selected_fields) != 1:
+        messagebox.showerror("Histogram - Error", "Histogram requires exactly one field to be selected for the X axis.")
+        return
+
     data = plot_data[x_selected_fields[0]]
+
+    # Check if the selected data is numeric
+    if not pd.api.types.is_numeric_dtype(data):
+        messagebox.showerror("Histogram - Error", "Histogram requires numerical data. Please select a numeric field.")
+        return
 
     # Use the improved dialog function with data to get user preferences
     use_custom_bins, custom_bins = ask_for_histogram_customization(data)
@@ -369,6 +407,13 @@ def plot_histogram(ax, plot_data):
         bin_count = int((data.max() - data.min()) / bin_width)
         counts, bins, patches = ax.hist(data, bins=bin_count, color='lightblue', edgecolor='black', alpha=0.7)
 
+    # Display values on bars if enabled
+    if display_values.get():
+        font_size = int(value_label_font_size_var.get())
+        for count, rect in zip(counts, patches):
+            height = rect.get_height()
+            ax.text(rect.get_x() + rect.get_width() / 2, height, f'{int(height)}', ha='center', va='bottom', fontsize=font_size)
+
     # Setting labels and titles
     ax.set_xlabel(", ".join(x_selected_fields), fontsize=12)
     ax.set_ylabel("Frequency", fontsize=12)
@@ -383,16 +428,6 @@ def plot_histogram(ax, plot_data):
         skew_text = f"Mean: {mean_value:.2f}, Std Dev: {std_dev:.2f}, Skew: {skew_value:.2f}"
         props = dict(boxstyle='round', facecolor='white', alpha=0.8)
         ax.text(0.95, 0.95, skew_text, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='right', bbox=props)
-
-        x = np.linspace(min(bins), max(bins), 400)
-        scale_factor = len(data) * np.diff(bins[:2])[0]
-        y_skew = norm.pdf(x, mean_value, std_dev) * scale_factor
-
-        skew_adjustment = skew_value * (x - mean_value)**3 / (3 * std_dev**3)
-        y_skew += skew_adjustment
-
-        ax.plot(x, y_skew, color='lightpink', linestyle='--', linewidth=2, label='Skewness Line')
-        ax.legend()
 
     ax.grid(axis='y', linestyle='--', alpha=0.7)
 
@@ -439,11 +474,11 @@ def plot_box(ax, plot_data):
 def plot_pie(ax, plot_data, x_selected_fields, y_selected_fields):
     # Check if the selected fields lists are initialized and have the correct length
     if not x_selected_fields or len(x_selected_fields) != 1:
-        messagebox.showerror("Error", "Pie Chart requires exactly one field selected for X Axis.")
+        messagebox.showerror("Pie - Error", "Pie Chart requires exactly one field selected for X Axis.")
         return
     
     if not y_selected_fields or len(y_selected_fields) == 0:
-        messagebox.showerror("Error", "No field selected for Y Axis.")
+        messagebox.showerror("Pie - Error", "No field selected for Y Axis.")
         return
 
     # Check if the selected field contains appropriate data for a pie chart (non-numeric and categorical)
@@ -455,7 +490,7 @@ def plot_pie(ax, plot_data, x_selected_fields, y_selected_fields):
     try:
         category_counts = plot_data[y_selected_fields[0]].value_counts()
     except KeyError:
-        messagebox.showerror("Error", f"Field '{y_selected_fields[0]}' not found in data.")
+        messagebox.showerror("Pie - Error", f"Field '{y_selected_fields[0]}' not found in data.")
         return
 
     # Plot the pie chart using the counts
@@ -468,73 +503,123 @@ def plot_pie(ax, plot_data, x_selected_fields, y_selected_fields):
     # Ensure no chart legend overlaps
     ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
 
+def plot_column(ax, plot_data):
+    if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
+        messagebox.showerror("ColumnBar - Error", "Column plot requires exactly one X field and one Y field.")
+        return
+
+    # Ensure y-axis data is numeric
+    if not pd.api.types.is_numeric_dtype(plot_data[y_selected_fields[0]]):
+        messagebox.showerror("ColumnBar - Error", "Y-axis data must be numeric (int or float) for column plots.")
+        return
+
+    try:
+        # Convert X and Y fields to numeric types, handling non-convertible data by coercion
+        plot_data[x_selected_fields[0]] = pd.to_numeric(plot_data[x_selected_fields[0]], errors='coerce')
+        plot_data[y_selected_fields[0]] = pd.to_numeric(plot_data[y_selected_fields[0]], errors='coerce')
+
+        # Check if conversion was successful; NaNs indicate failed conversion
+        if plot_data[x_selected_fields[0]].isnull().any() or plot_data[y_selected_fields[0]].isnull().any():
+            messagebox.showerror("ColumnBar - Error", "Non-numeric data found in fields after conversion attempt.")
+            return
+
+        # Remove rows with NaN values resulting from 'coerce'
+        plot_data = plot_data.dropna(subset=[x_selected_fields[0], y_selected_fields[0]])
+
+        # Aggregating data by the X field
+        aggregated_data = plot_data.groupby(x_selected_fields[0], as_index=False)[y_selected_fields[0]].mean()
+        order, max_items = ask_for_bar_customization()
+        if order is None or max_items is None:
+            messagebox.showwarning("ColumnBar - Warning", "Sorting order or max items not specified.")
+            return
+        
+        if order and max_items:
+            aggregated_data = aggregated_data.nlargest(max_items, y_selected_fields[0]) if order == 'desc' else aggregated_data.nsmallest(max_items, y_selected_fields[0])
+
+        x = aggregated_data[x_selected_fields[0]].astype(str)
+        y = aggregated_data[y_selected_fields[0]]
+
+        if use_seaborn.get():
+            bars = sns.barplot(data=aggregated_data, x=y_selected_fields[0], y=x_selected_fields[0], ax=ax, color='lightblue', orient='h')
+        else:
+            bars = ax.barh(x, y, color='lightblue')
+
+        ax.set_yticks(range(len(x)))
+        ax.set_yticklabels(x, rotation=y_tick_label_rotation_var.get(), fontsize=int(y_axis_font_size_var.get()))
+
+        if display_values.get():
+            font_size = int(value_label_font_size_var.get())
+            display_values_on_bars(ax, bars, font_size=font_size)
+
+    except Exception as e:
+        messagebox.showerror("ColumnBar - Error", f"Failed to plot column chart: {str(e)}")
 
 def plot_line(ax, plot_data):
     if len(x_selected_fields) != 1 or not y_selected_fields:
-        messagebox.showerror("Error", "Line plot requires exactly one X field and at least one Y field.")
+        messagebox.showerror("Line - Error", "Line plot requires exactly one X field and at least one Y field.")
         return
     for y_col in y_selected_fields:
         if use_seaborn.get():
-            sns.lineplot(data=plot_data, x=x_selected_fields[0], y=y_col, ax=ax, color='#66c2a5')
+            line = sns.lineplot(data=plot_data, x=x_selected_fields[0], y=y_col, ax=ax, color='#66c2a5')
         else:
-            ax.plot(plot_data[x_selected_fields[0]], plot_data[y_col], label=y_col, color='#66c2a5')
+            line, = ax.plot(plot_data[x_selected_fields[0]], plot_data[y_col], label=y_col, color='#66c2a5')
+
+        if display_values.get():
+            font_size = int(value_label_font_size_var.get())
+            display_values_on_bars(ax, [line], font_size=font_size)
+
     ax.legend()
 
 
 def generate_visualization():
-    try:
-        chart_type = chart_type_dropdown.get()
-        if chart_type in ["Histogram", "Pie Chart", "Box Plot"]:
-            if len(x_selected_fields) != 1:
-                messagebox.showerror("Error", f"Select only one field for the {chart_type}.")
-                return
-        else:
-            if not x_selected_fields or (chart_type != "Pie Chart" and not y_selected_fields):
-                messagebox.showerror("Error", "Select at least one field for both X and Y axes.")
-                return
+    chart_type_errors = {}
+    chart_type = chart_type_dropdown.get()
 
-        title_font_size = int(title_font_size_var.get())
-        x_tick_label_font_size = int(x_axis_font_size_var.get())
-        y_tick_label_font_size = int(y_axis_font_size_var.get())
-        x_tick_label_rotation = x_tick_label_rotation_var.get()
-        y_tick_label_rotation = y_tick_label_rotation_var.get()
+    # Initial checks for field selections based on the type of chart
+    if chart_type in ["Histogram", "Pie Chart", "Box Plot"]:
+        if len(x_selected_fields) != 1:
+            messagebox.showerror("Generating - Error", f"Select only one field for the {chart_type}.")
+            return
+    else:
+        if not x_selected_fields or (chart_type != "Pie Chart" and not y_selected_fields):
+            messagebox.showerror("Generating - Error", "Select at least one field for both X and Y axes.")
+            return
 
-        light_colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
+    # Setup general plot parameters
+    title_font_size = int(title_font_size_var.get())
+    x_tick_label_font_size = int(x_axis_font_size_var.get())
+    y_tick_label_font_size = int(y_axis_font_size_var.get())
+    x_tick_label_rotation = x_tick_label_rotation_var.get()
+    y_tick_label_rotation = y_tick_label_rotation_var.get()
 
-        generate_all = generate_all_var.get()
+    generate_all = generate_all_var.get()
+    chart_types = ["Histogram", "Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Box Plot", "Pie Chart"] if generate_all else [chart_type]
 
-        if generate_all:
-            chart_types = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
-        else:
-            chart_types = [chart_type]
-
-        for chart_type in chart_types:
+    for chart_type in chart_types:
+        try:
             fig, ax = plt.subplots(figsize=get_chart_size())
             if use_seaborn.get():
                 sns.set(style="whitegrid")
 
             plot_data = dataset[list(set(x_selected_fields + y_selected_fields))]
 
-            if chart_type == "Pie Chart":
-                plot_pie(ax, plot_data, x_selected_fields, y_selected_fields)  # Ensure x_selected_fields and y_selected_fields are passed
-            elif chart_type == "Bar":
-                plot_bar(ax, plot_data)
-            elif chart_type == "Column":
-                plot_column(ax, plot_data)
-            elif chart_type == "Area":
-                plot_area(ax, plot_data)
-            elif chart_type == "Stacked Bar":
-                plot_stacked_bar(ax, plot_data)
-            elif chart_type == "Scatter Plot":
-                plot_scatter(ax, plot_data)
-            elif chart_type == "Dual Axes":
-                plot_dual_axes(ax, plot_data)
-            elif chart_type == "Histogram":
-                plot_histogram(ax, plot_data)
-            elif chart_type == "Box Plot":
-                plot_box(ax, plot_data)
-            elif chart_type == "Line":
-                plot_line(ax, plot_data)
+            # Dictionary mapping chart types to their respective plotting functions
+            chart_functions = {
+                "Pie Chart": plot_pie,
+                "Bar": plot_bar,
+                "Column": plot_column,
+                "Area": plot_area,
+                "Stacked Bar": plot_stacked_bar,
+                "Scatter Plot": plot_scatter,
+                "Dual Axes": plot_dual_axes,
+                "Histogram": plot_histogram,
+                "Box Plot": plot_box,
+                "Line": plot_line
+            }
+
+            chart_function = chart_functions.get(chart_type)
+            if chart_function:
+                chart_function(ax, plot_data)
 
             ax.set_xlabel(", ".join(x_selected_fields), fontsize=x_tick_label_font_size)
             ax.set_ylabel(", ".join(y_selected_fields), fontsize=y_tick_label_font_size)
@@ -545,8 +630,12 @@ def generate_visualization():
             plt.tight_layout()
             plt.show()
 
-    except Exception as e:
-        messagebox.showerror("Error", f"Visualization failed: {str(e)}")
+        except Exception as e:
+            chart_type_errors[chart_type] = str(e)
+
+    if chart_type_errors:
+        error_message = "Visualizations failed - chart types:\n" + "\n".join(f"{k}: {v}" for k, v in chart_type_errors.items())
+        messagebox.showerror("Visualization Errors", error_message)
 
     # Untick and disable checkboxes
     display_aggression.set(0)
@@ -554,6 +643,7 @@ def generate_visualization():
 
     display_skew.set(0)
     skew_line_checkbutton.config(state=tk.DISABLED)
+
 
 def clear_selections():
     global x_selected_fields, y_selected_fields
@@ -569,6 +659,7 @@ def clear_selections():
 # GUI components
 frame = ttk.Frame(root, padding="10")
 frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
 load_button = ttk.Button(frame, text="Load File", command=load_file)
 load_button.grid(column=0, row=0, padx=10, pady=10)
 
@@ -604,84 +695,101 @@ chart_type_dropdown.grid(column=1, row=4, padx=10, pady=10)
 chart_type_dropdown.bind("<<ComboboxSelected>>", lambda event: update_options_based_on_chart_type())
 
 title_font_size_label = ttk.Label(frame, text="Title Font Size:")
-title_font_size_label.grid(column=0, row=5, padx=10, pady=10)
+title_font_size_label.grid(column=0, row=5, padx=10, pady=1)
 title_font_size_var = tk.StringVar()
 title_font_size_var.set("14")
 title_font_size_entry = ttk.Entry(frame, textvariable=title_font_size_var)
-title_font_size_entry.grid(column=1, row=5, padx=10, pady=10)
+title_font_size_entry.grid(column=1, row=5, padx=10, pady=1)
 
 x_axis_font_size_label = ttk.Label(frame, text="X-Axis Font Size:")
-x_axis_font_size_label.grid(column=0, row=6, padx=10, pady=10)
+x_axis_font_size_label.grid(column=0, row=6, padx=10, pady=1)
 x_axis_font_size_var = tk.StringVar()
 x_axis_font_size_var.set("10")
 x_axis_font_size_entry = ttk.Entry(frame, textvariable=x_axis_font_size_var)
-x_axis_font_size_entry.grid(column=1, row=6, padx=10, pady=10)
+x_axis_font_size_entry.grid(column=1, row=6, padx=10, pady=1)
 
 y_axis_font_size_label = ttk.Label(frame, text="Y-Axis Font Size:")
-y_axis_font_size_label.grid(column=0, row=7, padx=10, pady=10)
+y_axis_font_size_label.grid(column=0, row=7, padx=10, pady=1)
 y_axis_font_size_var = tk.StringVar()
 y_axis_font_size_var.set("10")
 y_axis_font_size_entry = ttk.Entry(frame, textvariable=y_axis_font_size_var)
-y_axis_font_size_entry.grid(column=1, row=7, padx=10, pady=10)
+y_axis_font_size_entry.grid(column=1, row=7, padx=10, pady=1)
+
+# Font size input for the value labels
+value_label_font_size_var = tk.StringVar(value="7")
+value_label_font_size_label = ttk.Label(frame, text="Bar / Line Count Label Size:")
+value_label_font_size_entry = ttk.Entry(frame, textvariable=value_label_font_size_var, width=5)
+value_label_font_size_label.grid(column=0, row=8, padx=10, pady=1)
+value_label_font_size_entry.grid(column=1, row=8, padx=10, pady=1)
 
 x_tick_label_rotation_label = ttk.Label(frame, text="X-Axis Tick Label Rotation:")
-x_tick_label_rotation_label.grid(column=0, row=8, padx=10, pady=10)
-x_tick_label_rotation_var = IntVar()
+x_tick_label_rotation_label.grid(column=0, row=9, padx=10, pady=1)
+x_tick_label_rotation_var = tk.IntVar()
 x_tick_label_rotation_var.set(45)
 x_radio_0 = ttk.Radiobutton(frame, text="0", variable=x_tick_label_rotation_var, value=0)
-x_radio_0.grid(column=1, row=8, padx=5, pady=5)
+x_radio_0.grid(column=1, row=9, padx=5, pady=1)
 x_radio_45 = ttk.Radiobutton(frame, text="45", variable=x_tick_label_rotation_var, value=45)
-x_radio_45.grid(column=2, row=8, padx=5, pady=5)
+x_radio_45.grid(column=2, row=9, padx=5, pady=1)
 x_radio_90 = ttk.Radiobutton(frame, text="90", variable=x_tick_label_rotation_var, value=90)
-x_radio_90.grid(column=3, row=8, padx=5, pady=5)
+x_radio_90.grid(column=3, row=9, padx=5, pady=1)
 
 y_tick_label_rotation_label = ttk.Label(frame, text="Y-Axis Tick Label Rotation:")
-y_tick_label_rotation_label.grid(column=0, row=9, padx=10, pady=10)
-y_tick_label_rotation_var = IntVar()
+y_tick_label_rotation_label.grid(column=0, row=10, padx=10, pady=1)
+y_tick_label_rotation_var = tk.IntVar()
 y_tick_label_rotation_var.set(0)
 y_radio_0 = ttk.Radiobutton(frame, text="0", variable=y_tick_label_rotation_var, value=0)
-y_radio_0.grid(column=1, row=9, padx=5, pady=5)
+y_radio_0.grid(column=1, row=10, padx=5, pady=1)
 y_radio_45 = ttk.Radiobutton(frame, text="45", variable=y_tick_label_rotation_var, value=45)
-y_radio_45.grid(column=2, row=9, padx=5, pady=5)
+y_radio_45.grid(column=2, row=10, padx=5, pady=1)
 y_radio_90 = ttk.Radiobutton(frame, text="90", variable=y_tick_label_rotation_var, value=90)
-y_radio_90.grid(column=3, row=9, padx=5, pady=5)
+y_radio_90.grid(column=3, row=10, padx=5, pady=1)
 
 chart_size_label = ttk.Label(frame, text="Chart Size:")
-chart_size_label.grid(column=0, row=10, padx=10, pady=10)
+chart_size_label.grid(column=0, row=11, padx=10, pady=1)
 chart_size = tk.StringVar()
 chart_size.set("Medium")
 chart_size_radio1 = ttk.Radiobutton(frame, text="Small", variable=chart_size, value="Small")
-chart_size_radio1.grid(column=1, row=10, padx=5, pady=5)
+chart_size_radio1.grid(column=1, row=11, padx=5, pady=1)
 chart_size_radio2 = ttk.Radiobutton(frame, text="Medium", variable=chart_size, value="Medium")
-chart_size_radio2.grid(column=2, row=10, padx=5, pady=5)
+chart_size_radio2.grid(column=2, row=11, padx=5, pady=1)
 chart_size_radio3 = ttk.Radiobutton(frame, text="Large", variable=chart_size, value="Large")
-chart_size_radio3.grid(column=3, row=10, padx=5, pady=5)
+chart_size_radio3.grid(column=3, row=11, padx=5, pady=1)
 
 recommendation_button = ttk.Button(frame, text="Update Recommendation", command=recommend_chart)
-recommendation_button.grid(column=0, row=11, padx=10, pady=10)
+recommendation_button.grid(column=0, row=12, padx=10, pady=1)
 
 visualize_button = ttk.Button(frame, text="Visualize", command=generate_visualization)
-visualize_button.grid(column=1, row=11, padx=10, pady=10)
+visualize_button.grid(column=1, row=12, padx=10, pady=1)
 
 clear_button = ttk.Button(frame, text="Clear Selection", command=clear_selections)
-clear_button.grid(column=2, row=11, padx=10, pady=10)
+clear_button.grid(column=2, row=12, padx=10, pady=1)
 
 recommendation_label = ttk.Label(frame, text="")
-recommendation_label.grid(row=12, column=0, columnspan=4, padx=10, pady=10)
+recommendation_label.grid(row=13, column=0, columnspan=4, padx=10, pady=1)
 
 generate_all_var = tk.BooleanVar()
-generate_all_checkbutton = Checkbutton(frame, text="Generate All Charts", variable=generate_all_var)
-generate_all_checkbutton.grid(column=0, row=13, padx=10, pady=10)
+generate_all_checkbutton = tk.Checkbutton(frame, text="Generate All Charts", variable=generate_all_var)
+generate_all_checkbutton.grid(column=0, row=14, padx=10, pady=1)
 
 # Checkbox for Display Aggression Line in Scatter Plot
-display_aggression = IntVar()
-aggression_checkbutton = Checkbutton(frame, text="Display Aggression Line", variable=display_aggression)
-aggression_checkbutton.grid(column=1, row=13, padx=10, pady=10)
+display_aggression = tk.IntVar()
+aggression_checkbutton = tk.Checkbutton(frame, text="Display Aggression Line", variable=display_aggression)
+aggression_checkbutton.grid(column=1, row=14, padx=10, pady=1)
 
 # Checkbox for Display Skew Line in Histogram
-display_skew = IntVar()
-skew_line_checkbutton = Checkbutton(frame, text="Display Skew Line", variable=display_skew)
-skew_line_checkbutton.grid(column=2, row=13, padx=10, pady=10)
+display_skew = tk.IntVar()
+skew_line_checkbutton = tk.Checkbutton(frame, text="Display Skew Line", variable=display_skew)
+skew_line_checkbutton.grid(column=2, row=14, padx=10, pady=1)
+
+# Checkbox for displaying values on bars/lines
+display_values = tk.IntVar(value=0)
+display_values_checkbutton = tk.Checkbutton(frame, text="Display Values", variable=display_values)
+display_values_checkbutton.grid(column=0, row=15, padx=10, pady=1)
+
+# Checkbox for customization option
+enable_customization = tk.IntVar()
+customization_checkbutton = tk.Checkbutton(frame, text="Enable Customization", variable=enable_customization)
+customization_checkbutton.grid(column=1, row=15, padx=10, pady=1)
 
 # Initial state setup for these options
 aggression_checkbutton.config(state=tk.DISABLED)
