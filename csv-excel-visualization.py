@@ -1,5 +1,3 @@
-# Fix this error visualization failed: ufunc 'substract' did not contain a loop with signature matching types (dtype('<U29'), dtype('<30')) -> none upon clicking generate all charts and/ or generate bar. Only write the affected code, DO NOT WRITE THE WHOLE CODE.
-
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -12,7 +10,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer v1.5.2.0511.2")
+root.title("CSV/Excel Data Visualizer V1.5.2.0511.3")
 
 global x_selected_fields, y_selected_fields, dataset
 x_selected_fields = []
@@ -107,6 +105,90 @@ def update_dropdowns(data):
         y_axis_listbox.insert(tk.END, col)
     chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
     update_options_based_on_chart_type()
+
+
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+from tkinter import filedialog, messagebox
+
+def generate_dashboard_and_save():
+    try:
+        # Create the figure
+        fig = plt.figure(figsize=(20, 15))
+        gs = GridSpec(3, 3, figure=fig)
+
+        # List of subplots to use
+        subplots = []
+        subplot_titles = []
+        failed_charts = []
+
+        # Create subplots for each type of chart without causing errors
+        def safe_plot(ax, plot_func, plot_data, title):
+            try:
+                plot_func(ax, plot_data)
+                ax.set_title(title)
+                subplots.append(ax)
+                subplot_titles.append(title)
+            except Exception:
+                failed_charts.append(title)
+
+        plot_data = dataset[list(set(x_selected_fields + y_selected_fields))]
+
+        # Line Plot
+        if "Line" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[0, 0]), plot_line, plot_data, "Line Plot")
+
+        # Bar Chart
+        if "Bar" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[0, 1]), plot_bar, plot_data, "Bar Chart")
+
+        # Column Chart
+        if "Column" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[0, 2]), plot_column, plot_data, "Column Chart")
+
+        # Stacked Bar Chart
+        if "Stacked Bar" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[1, 0]), plot_stacked_bar, plot_data, "Stacked Bar Chart")
+
+        # Scatter Plot
+        if "Scatter Plot" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[1, 1]), plot_scatter, plot_data, "Scatter Plot")
+
+        # Dual Axes Plot
+        if "Dual Axes" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[1, 2]), plot_dual_axes, plot_data, "Dual Axes Plot")
+
+        # Histogram
+        if "Histogram" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[2, 0]), plot_histogram, plot_data, "Histogram")
+
+        # Box Plot
+        if "Box Plot" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[2, 1]), plot_box, plot_data, "Box Plot")
+
+        # Pie Chart
+        if "Pie Chart" in chart_type_dropdown["values"]:
+            safe_plot(fig.add_subplot(gs[2, 2]), plot_pie, plot_data, "Pie Chart")
+
+        # Adjust layout and save the dashboard
+        if subplots:
+            plt.tight_layout()
+
+            # Ask user where to save the dashboard
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".png",
+                filetypes=[("PNG files", "*.png"), ("All files", "*.*")],
+                title="Save Dashboard as PNG"
+            )
+            if file_path:
+                fig.savefig(file_path, dpi=300)
+                success_message = f"Dashboard saved successfully at {file_path}"
+                if failed_charts:
+                    success_message += f"\n\nThe following charts could not be generated:\n" + "\n".join(failed_charts)
+            plt.close(fig)
+
+    except Exception as e:
+        return
 
 def update_options_based_on_chart_type():
     chart_type = chart_type_dropdown.get()
@@ -471,7 +553,7 @@ def plot_box(ax, plot_data):
         else:
             ax.boxplot([plot_data[y_field].values], labels=[x_field])
 
-def plot_pie(ax, plot_data, x_selected_fields, y_selected_fields):
+def plot_pie(ax, plot_data):
     # Check if the selected fields lists are initialized and have the correct length
     if not x_selected_fields or len(x_selected_fields) != 1:
         messagebox.showerror("Pie - Error", "Pie Chart requires exactly one field selected for X Axis.")
@@ -672,7 +754,7 @@ seaborn_radio_button.grid(column=1, row=1, padx=10, pady=10)
 matplotlib_radio_button = ttk.Radiobutton(frame, text="No", variable=use_seaborn, value=False)
 matplotlib_radio_button.grid(column=2, row=1, padx=10, pady=10)
 
-x_axis_label = ttk.Label(frame, text="X Axis:")
+x_axis_label = ttk.Label(frame, text="X Axis Field:")
 x_axis_label.grid(column=0, row=2, padx=10, pady=10)
 x_axis_listbox = Listbox(frame, selectmode=MULTIPLE, width=30, height=5)
 x_axis_listbox.grid(column=1, row=2, padx=10, pady=10)
@@ -680,7 +762,7 @@ x_axis_listbox.grid(column=1, row=2, padx=10, pady=10)
 store_x_button = ttk.Button(frame, text="Store X-Axis Selection", command=store_x_axis_selection)
 store_x_button.grid(column=2, row=2, padx=10, pady=10)
 
-y_axis_label = ttk.Label(frame, text="Y Axis:")
+y_axis_label = ttk.Label(frame, text="Y Axis Field:")
 y_axis_label.grid(column=0, row=3, padx=10, pady=10)
 y_axis_listbox = Listbox(frame, selectmode=MULTIPLE, width=30, height=5)
 y_axis_listbox.grid(column=1, row=3, padx=10, pady=10)
@@ -759,13 +841,17 @@ recommendation_button = ttk.Button(frame, text="Update Recommendation", command=
 recommendation_button.grid(column=0, row=12, padx=10, pady=1)
 
 visualize_button = ttk.Button(frame, text="Visualize", command=generate_visualization)
-visualize_button.grid(column=1, row=12, padx=10, pady=1)
+visualize_button.grid(column=1, row=12, padx=5, pady=1)
+
+# Add the button for saving the dashboard
+dashboard_button = ttk.Button(frame, text="Generate Dashboard", command=generate_dashboard_and_save)
+dashboard_button.grid(column=2, row=12, pady=5, padx=1)
 
 clear_button = ttk.Button(frame, text="Clear Selection", command=clear_selections)
-clear_button.grid(column=2, row=12, padx=10, pady=1)
+clear_button.grid(column=1, row=13, padx=5, pady=1)
 
 recommendation_label = ttk.Label(frame, text="")
-recommendation_label.grid(row=13, column=0, columnspan=4, padx=10, pady=1)
+recommendation_label.grid(row=13, column=0, padx=10, pady=1)
 
 generate_all_var = tk.BooleanVar()
 generate_all_checkbutton = tk.Checkbutton(frame, text="Generate All Charts", variable=generate_all_var)
