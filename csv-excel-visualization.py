@@ -4,13 +4,13 @@ import seaborn as sns
 from tkinter import filedialog, messagebox, simpledialog, ttk, Listbox, MULTIPLE, IntVar, StringVar, Checkbutton
 import tkinter as tk
 import numpy as np
-from scipy.stats import norm, skew
+from scipy.stats import norm, skew, linregress
 from PIL import Image, ImageTk
 import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer v1.5 - refactor code")
+root.title("CSV/Excel Data Visualizer v1.5.1.0511")
 
 global x_selected_fields, y_selected_fields, dataset
 x_selected_fields = []
@@ -91,6 +91,25 @@ def ask_for_histogram_customization(data):
 
     return (False, None)
 
+def ask_for_bar_customization():
+    """
+    Prompt the user to customize the bar chart's sorting order and the number of top items to display.
+    """
+    response = messagebox.askyesno("Customize Bar Chart", "Do you want to customize the bar chart settings?")
+    if response:
+        order = simpledialog.askstring("Sorting Order", "Enter 'asc' for ascending or 'desc' for descending:")
+        if order not in ['asc', 'desc']:
+            messagebox.showerror("Error", "Invalid order. Please enter 'asc' or 'desc'.")
+            return None, None
+
+        max_items = simpledialog.askinteger("Number of Items", "Enter the number of top items to display (Max is {}):".format(len(dataset)))
+        if max_items is None or max_items < 1 or max_items > len(dataset):
+            messagebox.showerror("Error", "Invalid number of items. Please enter a valid number.")
+            return None, None
+
+        return order, max_items
+    return None, None
+
 def load_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV and Excel Files", "*.csv;*.xlsx")])
     if file_path:
@@ -170,76 +189,166 @@ def advanced_chart_recommendation(x_columns, y_columns, dataset):
     y_dtype = dataset[y_columns[0]].dtype
     x_unique_count = dataset[x_columns[0]].nunique()
     y_unique_count = dataset[y_columns[0]].nunique()
+    total_entries = len(dataset)
 
+    # Checking for single variable usage
+    if len(x_columns) == 1 and x_columns == y_columns:
+        if pd.api.types.is_numeric_dtype(x_dtype):
+            return "Histogram"
+        else:
+            return "Pie Chart" if x_unique_count < 20 else "Bar"
+
+    # Multi-variable interactions
     if len(x_columns) > 1 or len(y_columns) > 1:
-        return "Line"
-    elif x_columns == y_columns:
-        return "Histogram"
-    elif pd.api.types.is_numeric_dtype(x_dtype) and pd.api.types.is_numeric_dtype(y_dtype):
-        if len(dataset) > 1000:
-            return "Scatter Plot"
-        return "Line"
-    elif pd.api.types.is_categorical_dtype(x_dtype) or pd.api.types.is_object_dtype(x_dtype):
+        if all(dataset[col].dtype.kind in 'fi' for col in x_columns + y_columns):
+            correlation = dataset[x_columns + y_columns].corr()
+            # Check if high correlation exists
+            if (correlation.abs() > 0.75).any().any():
+                return "Line"  # Strong linear relationship
+            else:
+                return "Scatter Plot"  # To explore potential relationships and distributions
+
+    # Single X, multiple Y or vice versa
+    if len(x_columns) == 1 and len(y_columns) > 1:
+        if pd.api.types.is_numeric_dtype(x_dtype) and all(dataset[y].dtype.kind in 'fi' for y in y_columns):
+            return "Line"  # Time series or continuous relationships
+        else:
+            return "Stacked Bar"  # Categorical comparison across multiple Y variables
+
+    # Categorical X, Numeric Y
+    if pd.api.types.is_categorical_dtype(x_dtype) or pd.api.types.is_object_dtype(x_dtype):
         if y_unique_count <= 10:
             return "Bar"
-        return "Box Plot" if len(dataset) > 50 else "Bar"
-    elif pd.api.types.is_categorical_dtype(y_dtype) or pd.api.types.is_object_dtype(y_dtype):
-        if x_unique_count <= 10 and len(dataset) <= 20:
-            return "Pie Chart"
+        elif total_entries > 50:
+            return "Box Plot"
         return "Bar"
-    return "Scatter Plot"
+
+    # Numeric X, Categorical Y
+    if pd.api.types.is_numeric_dtype(x_dtype) and (pd.api.types.is_categorical_dtype(y_dtype) or pd.api.types.is_object_dtype(y_dtype)):
+        if x_unique_count <= 10 and total_entries <= 20:
+            return "Pie Chart"
+        return "Line"  # To explore trends across categories
+
+    # Default for numeric types or mixed usage
+    return "Scatter Plot" if total_entries > 1000 else "Line"
 
 
 def plot_bar(ax, plot_data):
-    x = plot_data[x_selected_fields[0]]
-    y = plot_data[y_selected_fields[0]]
-    bar_width = 0.8
-    if use_seaborn.get():
-        sns.barplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, color='lightblue', orient='v')
-    else:
-        ax.bar(x, y, width=bar_width, color='lightblue')
+    if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
+        messagebox.showerror("Error", "Bar plot requires exactly one X field and one Y field.")
+        return
 
-    ax.set_xticks(range(len(x)))
-    ax.set_xticklabels(x, rotation=x_tick_label_rotation_var.get(), fontsize=int(x_axis_font_size_var.get()))
+    # Ensure y-axis data is numeric
+    if not pd.api.types.is_numeric_dtype(plot_data[y_selected_fields[0]]):
+        messagebox.showerror("Error", "Y-axis data must be numeric (int or float) for bar plots.")
+        return
 
-def plot_column(ax, plot_data):
-    plot_bar(ax, plot_data)
-    ax.set_xlabel(", ".join(x_selected_fields), fontsize=int(x_axis_font_size_var.get()))
-    ax.set_ylabel(", ".join(y_selected_fields), fontsize=int(y_axis_font_size_var.get()))
+    try:
+        # Aggregating data by the X field
+        # Change 'mean' to 'sum', 'max', 'min', or any other appropriate aggregation
+        aggregated_data = plot_data.groupby(x_selected_fields[0], as_index=False)[y_selected_fields[0]].mean()
+
+        # Ask for customization
+        order, max_items = ask_for_bar_customization()
+        if order and max_items:
+            aggregated_data = aggregated_data.nlargest(max_items, y_selected_fields[0]) if order == 'desc' else aggregated_data.nsmallest(max_items, y_selected_fields[0])
+        
+        x = aggregated_data[x_selected_fields[0]]
+        y = aggregated_data[y_selected_fields[0]]
+        bar_width = 0.8
+
+        # Convert x values to strings for labeling purposes
+        x = x.astype(str)
+
+        if use_seaborn.get():
+            sns.barplot(data=aggregated_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, color='lightblue', orient='v')
+        else:
+            ax.bar(x, y, width=bar_width, color='lightblue')
+
+        ax.set_xticks(range(len(x)))
+        ax.set_xticklabels(x, rotation=x_tick_label_rotation_var.get(), fontsize=int(x_axis_font_size_var.get()))
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to plot bar chart: {str(e)}")
 
 def plot_area(ax, plot_data):
+    if len(x_selected_fields) != 1:
+        messagebox.showerror("Error", "Area plot requires exactly one X field and multiple Y fields.")
+        return
     for y_col in y_selected_fields:
         ax.fill_between(plot_data[x_selected_fields[0]], plot_data[y_col], alpha=0.3, label=y_col, color='#66c2a5')
     ax.legend()
 
 def plot_stacked_bar(ax, plot_data):
+    if len(x_selected_fields) != 1:
+        messagebox.showerror("Error", "Stacked Bar plot requires exactly one X field and multiple Y fields.")
+        return
+    if not y_selected_fields:
+        messagebox.showerror("Error", "Stacked Bar plot requires at least one Y field.")
+        return
+
+    # Preparing the data for plotting
     crosstab_data = plot_data.groupby(x_selected_fields[0])[y_selected_fields].sum()
-    crosstab_data.plot(kind='bar', stacked=True, ax=ax, color=['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3'])
+
+    if use_seaborn.get():
+        # Seaborn doesn't support stacked bars directly, use Matplotlib's functionality
+        bottom = np.zeros(len(crosstab_data))
+        palette = sns.color_palette("husl", len(y_selected_fields))  # Get a color palette from Seaborn
+        for idx, col in enumerate(y_selected_fields):
+            ax.bar(crosstab_data.index, crosstab_data[col], bottom=bottom, label=col, color=palette[idx])
+            bottom += crosstab_data[col].values  # Update the bottom position for the next bar
+    else:
+        # Directly use Matplotlib's stacked bar functionality
+        crosstab_data.plot(kind='bar', stacked=True, ax=ax, color=sns.color_palette("husl", len(y_selected_fields)))
+
     ax.set_xticks(range(len(crosstab_data.index)))
     ax.set_xticklabels(crosstab_data.index, rotation=x_tick_label_rotation_var.get(), fontsize=int(x_axis_font_size_var.get()))
+    ax.set_xlabel(x_selected_fields[0], fontsize=int(x_axis_font_size_var.get()))
+    ax.set_ylabel("Sum of Values", fontsize=int(y_axis_font_size_var.get()))
+    ax.legend(title="Categories")
 
 def plot_scatter(ax, plot_data):
+    # Ensure the columns are numeric and handle NaN values
+    if plot_data[x_selected_fields[0]].dtype.kind not in 'fi' or plot_data[y_selected_fields[0]].dtype.kind not in 'fi':
+        messagebox.showerror("Error", "Scatter plot requires numeric data types for both axes.")
+        return
+
+    # Drop NaN values from the data used in the scatter plot to avoid errors in calculations
+    plot_data = plot_data.dropna(subset=[x_selected_fields[0], y_selected_fields[0]])
+
+    # Plotting the scatter plot
     if use_seaborn.get():
         sns.scatterplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, color='#66c2a5')
     else:
         ax.scatter(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], color='#66c2a5')
 
+    # Checking if the aggression line should be displayed
     if display_aggression.get():
-        from scipy.stats import linregress
-        x_data = plot_data[x_selected_fields[0]]
-        y_data = plot_data[y_selected_fields[0]]
-        slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
-        
-        ax.plot(x_data, intercept + slope * x_data, color="lightpink", label=f'Aggression Line: y={intercept:.2f}+{slope:.2f}x')
-        textstr = f'Slope: {slope:.2f}'
-        props = dict(boxstyle='round', facecolor='white', alpha=0.5)
-        ax.text(0.95, 0.05, textstr, transform=ax.transAxes, fontsize=8, verticalalignment='bottom', horizontalalignment='right', bbox=props)
+        try:
+            x_data = plot_data[x_selected_fields[0]].astype(float)
+            y_data = plot_data[y_selected_fields[0]].astype(float)
+            slope, intercept, r_value, p_value, std_err = linregress(x_data, y_data)
+            ax.plot(x_data, intercept + slope * x_data, color="lightpink", label=f'Aggression Line: y={intercept:.2f}+{slope:.2f}x')
+
+            textstr = f'Slope: {slope:.2f}, R-squared: {r_value**2:.2f}'
+            props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+            ax.text(0.95, 0.05, textstr, transform=ax.transAxes, fontsize=8, verticalalignment='bottom', horizontalalignment='right', bbox=props)
+            ax.legend()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to compute aggression line: {str(e)}")
+
+    ax.legend()
+
 
 def plot_dual_axes(ax, plot_data):
+    if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
+        messagebox.showerror("Error", "Dual Axes plot requires exactly one X field and one Y field.")
+        return
     ax2 = ax.twinx()
     ax.plot(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], label=x_selected_fields[0], color='#66c2a5')
     ax2.plot(plot_data[y_selected_fields[0]], label=y_selected_fields[0], color='#fc8d62')
     ax2.set_ylabel(", ".join(y_selected_fields), fontsize=int(y_axis_font_size_var.get()))
+    ax.legend()
 
 def plot_histogram(ax, plot_data):
     data = plot_data[x_selected_fields[0]]
@@ -288,28 +397,99 @@ def plot_histogram(ax, plot_data):
     ax.grid(axis='y', linestyle='--', alpha=0.7)
 
 def plot_box(ax, plot_data):
-    if use_seaborn.get():
-        sns.boxplot(data=plot_data, x=x_selected_fields[0], y=y_selected_fields[0], ax=ax, palette=['#66c2a5'])
-    else:
-        ax.boxplot([plot_data[col] for col in x_selected_fields + y_selected_fields])
+    if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
+        ax.clear()
+        ax.text(0.5, 0.5, "Box plot requires exactly one X field and one Y field.", ha='center', va='center')
+        return
 
-def plot_pie(ax, plot_data):
-    plot_data[y_selected_fields[0]].value_counts().plot.pie(ax=ax, autopct='%1.1f%%', colors=['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3'])
+    x_field = x_selected_fields[0]
+    y_field = y_selected_fields[0]
+
+    if x_field not in plot_data.columns or y_field not in plot_data.columns:
+        ax.clear()
+        ax.text(0.5, 0.5, f"Selected fields ({x_field}, {y_field}) not found in the dataset.", ha='center', va='center')
+        return
+
+    if not np.issubdtype(plot_data[y_field].dtype, np.number):
+        ax.clear()
+        ax.text(0.5, 0.5, f"Y field ({y_field}) must be numeric for box plot.", ha='center', va='center')
+        return
+
+    if use_seaborn.get():
+        if plot_data[x_field].nunique() > 1:
+            try:
+                sns.boxplot(data=plot_data, x=x_field, y=y_field, ax=ax)
+            except ValueError as e:
+                ax.clear()
+                ax.text(0.5, 0.5, str(e), ha='center', va='center')
+        else:
+            try:
+                sns.boxplot(data=plot_data, y=y_field, ax=ax)
+            except ValueError as e:
+                ax.clear()
+                ax.text(0.5, 0.5, str(e), ha='center', va='center')
+    else:
+        if plot_data[x_field].nunique() > 1:
+            grouped_data = [group[y_field].values for _, group in plot_data.groupby(x_field)]
+            labels = plot_data[x_field].unique()
+            ax.boxplot(grouped_data, labels=labels)
+        else:
+            ax.boxplot([plot_data[y_field].values], labels=[x_field])
+
+def plot_pie(ax, plot_data, x_selected_fields, y_selected_fields):
+    # Check if the selected fields lists are initialized and have the correct length
+    if not x_selected_fields or len(x_selected_fields) != 1:
+        messagebox.showerror("Error", "Pie Chart requires exactly one field selected for X Axis.")
+        return
+    
+    if not y_selected_fields or len(y_selected_fields) == 0:
+        messagebox.showerror("Error", "No field selected for Y Axis.")
+        return
+
+    # Check if the selected field contains appropriate data for a pie chart (non-numeric and categorical)
+    if pd.api.types.is_numeric_dtype(plot_data[y_selected_fields[0]]):
+        messagebox.showerror("Error", "Pie Chart requires categorical data, not numeric data.")
+        return
+
+    # Calculate the value counts of the categories which will determine the size of each pie slice
+    try:
+        category_counts = plot_data[y_selected_fields[0]].value_counts()
+    except KeyError:
+        messagebox.showerror("Error", f"Field '{y_selected_fields[0]}' not found in data.")
+        return
+
+    # Plot the pie chart using the counts
+    category_counts.plot.pie(ax=ax, autopct='%1.1f%%', startangle=90, colors=['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3'])
+
+    # Additional aesthetics for clarity
+    ax.set_ylabel('')  # Pie charts do not need a y-axis label
+    ax.set_title(f"Pie Chart: {y_selected_fields[0]}", fontsize=14)
+
+    # Ensure no chart legend overlaps
+    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+
 
 def plot_line(ax, plot_data):
+    if len(x_selected_fields) != 1 or not y_selected_fields:
+        messagebox.showerror("Error", "Line plot requires exactly one X field and at least one Y field.")
+        return
     for y_col in y_selected_fields:
-        sns.lineplot(data=plot_data, x=x_selected_fields[0], y=y_col, ax=ax, color='#66c2a5') if use_seaborn.get() else ax.plot(plot_data[x_selected_fields[0]], plot_data[y_col], label=y_col, color='#66c2a5')
+        if use_seaborn.get():
+            sns.lineplot(data=plot_data, x=x_selected_fields[0], y=y_col, ax=ax, color='#66c2a5')
+        else:
+            ax.plot(plot_data[x_selected_fields[0]], plot_data[y_col], label=y_col, color='#66c2a5')
     ax.legend()
+
 
 def generate_visualization():
     try:
         chart_type = chart_type_dropdown.get()
-        if chart_type == "Histogram":
+        if chart_type in ["Histogram", "Pie Chart", "Box Plot"]:
             if len(x_selected_fields) != 1:
-                messagebox.showerror("Error", "Select only one field for the Histogram.")
+                messagebox.showerror("Error", f"Select only one field for the {chart_type}.")
                 return
         else:
-            if not x_selected_fields or not y_selected_fields:
+            if not x_selected_fields or (chart_type != "Pie Chart" and not y_selected_fields):
                 messagebox.showerror("Error", "Select at least one field for both X and Y axes.")
                 return
 
@@ -335,7 +515,9 @@ def generate_visualization():
 
             plot_data = dataset[list(set(x_selected_fields + y_selected_fields))]
 
-            if chart_type == "Bar":
+            if chart_type == "Pie Chart":
+                plot_pie(ax, plot_data, x_selected_fields, y_selected_fields)  # Ensure x_selected_fields and y_selected_fields are passed
+            elif chart_type == "Bar":
                 plot_bar(ax, plot_data)
             elif chart_type == "Column":
                 plot_column(ax, plot_data)
@@ -351,8 +533,6 @@ def generate_visualization():
                 plot_histogram(ax, plot_data)
             elif chart_type == "Box Plot":
                 plot_box(ax, plot_data)
-            elif chart_type == "Pie Chart":
-                plot_pie(ax, plot_data)
             elif chart_type == "Line":
                 plot_line(ax, plot_data)
 
@@ -374,7 +554,6 @@ def generate_visualization():
 
     display_skew.set(0)
     skew_line_checkbutton.config(state=tk.DISABLED)
-
 
 def clear_selections():
     global x_selected_fields, y_selected_fields
