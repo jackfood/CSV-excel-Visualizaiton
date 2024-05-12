@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from tkinter import filedialog, messagebox, simpledialog, ttk, Listbox, MULTIPLE, IntVar, StringVar, Checkbutton
+from tkinter import filedialog, messagebox, simpledialog, ttk, Listbox, MULTIPLE, IntVar, StringVar, Checkbutton, Scale, Toplevel
 import tkinter as tk
 import numpy as np
 from scipy.stats import norm, skew, linregress
@@ -13,14 +13,15 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.3.0512.2")
+root.title("CSV/Excel Data Visualizer V1.5.3.0512.3")
 
-global x_selected_fields, y_selected_fields, dataset
+global x_selected_fields, y_selected_fields, dataset, original_dataset
 x_selected_fields = []
 y_selected_fields = []
 dataset = pd.DataFrame()
 display_skew = IntVar()
 display_aggression = IntVar()
+original_dataset = dataset.copy()
 
 def ask_for_histogram_customization(data):
     # Determine the default values based on the data
@@ -78,64 +79,111 @@ def ask_for_bar_customization():
         return 'desc', min(len(dataset), 10)  # Default order and number of items
 
 def filter_data():
-    if not x_axis_listbox.curselection():
-        messagebox.showwarning("Filter Warning", "Please select a field from the X-Axis listbox.")
+    selected_indices = x_axis_listbox.curselection()
+    if not selected_indices:
+        messagebox.showwarning("Filter Warning", "Please select at least one field from the X-Axis listbox.")
         return
 
-    if len(x_axis_listbox.curselection()) > 1:
-        messagebox.showwarning("Filter Warning", "Please select only one field for filtering.")
-        return
+    filter_window = tk.Toplevel(root)
+    filter_window.title("Filter Options")
+    entries = {}
 
-    selected_field = x_axis_listbox.get(x_axis_listbox.curselection()[0])
-    unique_values = dataset[selected_field].unique()
+    for index in selected_indices:
+        field = x_axis_listbox.get(index)
+        dtype = dataset[field].dtype
 
-    if dataset[selected_field].dtype == 'object':
-        filter_window = tk.Toplevel(root)
-        filter_window.title("Filter Options")
+        frame = ttk.LabelFrame(filter_window, text=f"Filter {field} - {dtype}")
+        frame.pack(padx=10, pady=5, fill='x', expand=True)
 
-        filter_listbox = tk.Listbox(filter_window, selectmode=tk.MULTIPLE, width=30, height=10)
-        filter_listbox.pack(padx=10, pady=10)
+        if dtype.kind in 'O':  # Object (treat as categorical)
+            lb = Listbox(frame, selectmode=MULTIPLE, width=50, height=4, exportselection=False)
+            lb.pack(side="top", fill="x", expand=True)
+            for value in sorted(dataset[field].unique()):
+                lb.insert(tk.END, value)
+            entries[field] = lb
+        elif dtype.kind in 'iuf':  # Integer, unsigned integer, float
+            current_min, current_max = dataset[field].min(), dataset[field].max()
+            min_label = ttk.Label(frame, text=f"Min value (current min: {current_min}):")
+            min_label.pack(side="top")
+            min_entry = ttk.Entry(frame, width=10)
+            min_entry.insert(0, str(current_min))
+            min_entry.pack(side="top", padx=5)
 
-        for value in sorted(unique_values):
-            filter_listbox.insert(tk.END, value)
+            max_label = ttk.Label(frame, text=f"Max value (current max: {current_max}):")
+            max_label.pack(side="top")
+            max_entry = ttk.Entry(frame, width=10)
+            max_entry.insert(0, str(current_max))
+            max_entry.pack(side="top", padx=5)
 
-        def apply_filter():
-            selected_values = [filter_listbox.get(idx) for idx in filter_listbox.curselection()]
-            filtered_dataset = dataset[dataset[selected_field].isin(selected_values)]
-            update_dropdowns(filtered_dataset)
-            filter_label.config(text=f"Filter: {selected_field} in {', '.join(selected_values)}")
-            global x_selected_fields, y_selected_fields
-            x_selected_fields = [field for field in x_selected_fields if field in filtered_dataset.columns]
-            y_selected_fields = [field for field in y_selected_fields if field in filtered_dataset.columns]
-            filter_window.destroy()
+            entries[field] = (min_entry, max_entry)
+        elif dtype.kind == 'M':  # Datetime
+            min_label = ttk.Label(frame, text="Start Date:")
+            min_label.pack(side="top")
+            min_entry = ttk.Entry(frame, width=20)
+            min_entry.insert(0, dataset[field].min().strftime('%Y-%m-%d'))
+            min_entry.pack(side="top", padx=5)
 
-        apply_button = ttk.Button(filter_window, text="Apply Filter", command=apply_filter)
-        apply_button.pack(padx=10, pady=10)
-    else:
-        min_value = dataset[selected_field].min()
-        max_value = dataset[selected_field].max()
+            max_label = ttk.Label(frame, text="End Date:")
+            max_label.pack(side="top")
+            max_entry = ttk.Entry(frame, width=20)
+            max_entry.insert(0, dataset[field].max().strftime('%Y-%m-%d'))
+            max_entry.pack(side="top", padx=5)
 
-        filter_window = tk.Toplevel(root)
-        filter_window.title("Filter Options")
+            entries[field] = (min_entry, max_entry)
 
-        min_entry = ttk.Entry(filter_window)
-        min_entry.insert(0, str(min_value))
-        min_entry.pack(padx=10, pady=10)
+    def apply_filters():
+        global dataset
+        conditions = []
+        active_filters = []
 
-        max_entry = ttk.Entry(filter_window)
-        max_entry.insert(0, str(max_value))
-        max_entry.pack(padx=10, pady=10)
+        for field, entry in entries.items():
+            dtype = dataset[field].dtype
+            if isinstance(entry, Listbox):  # Categorical
+                selected = [entry.get(idx) for idx in entry.curselection()]
+                if selected:
+                    conditions.append(dataset[field].isin(selected))
+                    active_filters.append(f"{field} in ({', '.join(selected)})")
+            elif dtype.kind in 'iuf':  # Numeric
+                try:
+                    min_val = float(entry[0].get())
+                    max_val = float(entry[1].get())
+                    if min_val > max_val:
+                        raise ValueError("Minimum value cannot be greater than maximum value.")
+                    conditions.append((dataset[field] >= min_val) & (dataset[field] <= max_val))
+                    active_filters.append(f"{field} between {min_val} and {max_val}")
+                except ValueError as e:
+                    messagebox.showerror("Invalid Input", f"Please enter valid numbers for {field}: {e}")
+                    return
+            elif dtype.kind == 'M':  # Datetime
+                try:
+                    min_date = datetime.strptime(entry[0].get(), '%Y-%m-%d')
+                    max_date = datetime.strptime(entry[1].get(), '%Y-%m-%d')
+                    if min_date > max_date:
+                        raise ValueError("Start date cannot be later than end date.")
+                    conditions.append((dataset[field] >= min_date) & (dataset[field] <= max_date))
+                    active_filters.append(f"{field} from {min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}")
+# datetime handling has already been validated for min_date and max_date above
+                except ValueError as e:
+                    messagebox.showerror("Invalid Input", f"Please enter valid dates for {field}: {e}")
+                    return  # Exit the function early if there's an error
 
-        def apply_filter():
-            min_val = float(min_entry.get())
-            max_val = float(max_entry.get())
-            filtered_dataset = dataset[(dataset[selected_field] >= min_val) & (dataset[selected_field] <= max_val)]
-            update_dropdowns(filtered_dataset)
-            filter_label.config(text=f"Filter: {selected_field} between {min_val} and {max_val}")
-            filter_window.destroy()
+        if conditions:
+            combined_condition = conditions[0]
+            for cond in conditions[1:]:
+                combined_condition &= cond  # Use bitwise AND to combine conditions
+            dataset = dataset[combined_condition]
+            update_dropdowns(dataset)
+            active_filters_text = '; '.join(active_filters)
+            filter_label.config(text=f"Active Filters: {active_filters_text}" if active_filters else "No active filters")
+        else:
+            # Notify user no filters have been applied or no conditions were changed
+            messagebox.showinfo("Filter Info", "No filters have been applied or no changes were made to the existing filters.")
 
-        apply_button = ttk.Button(filter_window, text="Apply Filter", command=apply_filter)
-        apply_button.pack(padx=10, pady=10)
+        filter_window.destroy()
+
+    apply_button = ttk.Button(filter_window, text="Apply Filters", command=apply_filters)
+    apply_button.pack(padx=10, pady=10)
+
 
 def load_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV and Excel Files", "*.csv;*.xlsx")])
@@ -158,13 +206,18 @@ def get_chart_size():
     return sizes[chart_size.get()]
 
 def update_dropdowns(data):
+    """Update listboxes with new data after loading or applying filters."""
     global dataset
     dataset = data
     x_axis_listbox.delete(0, tk.END)
     y_axis_listbox.delete(0, tk.END)
-    for column in dataset.columns:
+    for column in data.columns:
         x_axis_listbox.insert(tk.END, column)
         y_axis_listbox.insert(tk.END, column)
+
+    # Optionally, you can add a message or disable certain UI elements if the dataset is empty
+    if dataset.empty:
+        print("Warning: The dataset is empty after filtering.")
 
 
 def generate_dashboard_and_save():
@@ -289,7 +342,7 @@ def store_x_axis_selection():
     global x_selected_fields
     x_selected_fields = [x_axis_listbox.get(idx) for idx in x_axis_listbox.curselection()]
     x_axis_label["text"] = f"X Axis (Selected: {', '.join(x_selected_fields)}):" if x_selected_fields else "X Axis:"
-    update_options_based_on_selection()
+    update_aggression_options_based_on_selection()
 
 def store_y_axis_selection():
     global y_selected_fields
@@ -362,6 +415,7 @@ def advanced_chart_recommendation(x_columns, y_columns, dataset):
 
     # Default for numeric types or mixed usage
     return "Scatter Plot" if total_entries > 1000 else "Line"
+
 
 def aggregate_data(data, x_col, y_col, aggregation_method):
     if aggregation_method == 'mean':
@@ -937,8 +991,6 @@ chart_type_label = ttk.Label(frame, text="Chart Type:")
 chart_type_label.grid(column=0, row=5, padx=10, pady=10)
 chart_type_dropdown = ttk.Combobox(frame)
 chart_type_dropdown.grid(column=1, row=5, padx=10, pady=10)
-chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", 
-                               "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
 chart_type_dropdown.bind("<<ComboboxSelected>>", lambda event: [check_chart_suitability(), update_aggression_options_based_on_chart_type()])
 
 title_font_size_label = ttk.Label(frame, text="Title Font Size:")
