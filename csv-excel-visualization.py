@@ -1,6 +1,3 @@
-# The issue you're facing with the code not allowing multiple selections across different list boxes is likely due to the default behavior of Tkinter Listbox widgets where the selection in one list box interferes with the selection in another when multiple list boxes are placed in the same window. This is governed by the exportselection parameter, which is True by default.
-# To allow multiple selections across different list boxes in the same window, you need to set exportselection=False for each list box. This setting prevents the Tkinter clipboard from automatically clearing selections in other list boxes when a new selection is made.
-
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -16,15 +13,16 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.3.0512.3")
+root.title("CSV/Excel Data Visualizer V1.5.3.0512.4")
 
-global x_selected_fields, y_selected_fields, dataset, original_dataset
+global x_selected_fields, y_selected_fields, dataset, original_dataset, last_file_path
 x_selected_fields = []
 y_selected_fields = []
 dataset = pd.DataFrame()
 display_skew = IntVar()
 display_aggression = IntVar()
 original_dataset = dataset.copy()
+last_file_path = None
 
 def ask_for_histogram_customization(data):
     # Determine the default values based on the data
@@ -104,32 +102,18 @@ def filter_data():
             for value in sorted(dataset[field].unique()):
                 lb.insert(tk.END, value)
             entries[field] = lb
-        elif dtype.kind in 'iuf':  # Integer, unsigned integer, float
+        elif dtype.kind in 'iuf' or dtype.kind == 'M':  # Numeric or Datetime
             current_min, current_max = dataset[field].min(), dataset[field].max()
-            min_label = ttk.Label(frame, text=f"Min value (current min: {current_min}):")
+            min_label = ttk.Label(frame, text="Min value:")
             min_label.pack(side="top")
-            min_entry = ttk.Entry(frame, width=10)
+            min_entry = ttk.Entry(frame, width=15)
             min_entry.insert(0, str(current_min))
             min_entry.pack(side="top", padx=5)
 
-            max_label = ttk.Label(frame, text=f"Max value (current max: {current_max}):")
+            max_label = ttk.Label(frame, text="Max value:")
             max_label.pack(side="top")
-            max_entry = ttk.Entry(frame, width=10)
+            max_entry = ttk.Entry(frame, width=15)
             max_entry.insert(0, str(current_max))
-            max_entry.pack(side="top", padx=5)
-
-            entries[field] = (min_entry, max_entry)
-        elif dtype.kind == 'M':  # Datetime
-            min_label = ttk.Label(frame, text="Start Date:")
-            min_label.pack(side="top")
-            min_entry = ttk.Entry(frame, width=20)
-            min_entry.insert(0, dataset[field].min().strftime('%Y-%m-%d'))
-            min_entry.pack(side="top", padx=5)
-
-            max_label = ttk.Label(frame, text="End Date:")
-            max_label.pack(side="top")
-            max_entry = ttk.Entry(frame, width=20)
-            max_entry.insert(0, dataset[field].max().strftime('%Y-%m-%d'))
             max_entry.pack(side="top", padx=5)
 
             entries[field] = (min_entry, max_entry)
@@ -146,51 +130,46 @@ def filter_data():
                 if selected:
                     conditions.append(dataset[field].isin(selected))
                     active_filters.append(f"{field} in ({', '.join(selected)})")
-            elif dtype.kind in 'iuf':  # Numeric
-                try:
-                    min_val = float(entry[0].get())
-                    max_val = float(entry[1].get())
-                    if min_val > max_val:
-                        raise ValueError("Minimum value cannot be greater than maximum value.")
-                    conditions.append((dataset[field] >= min_val) & (dataset[field] <= max_val))
-                    active_filters.append(f"{field} between {min_val} and {max_val}")
-                except ValueError as e:
-                    messagebox.showerror("Invalid Input", f"Please enter valid numbers for {field}: {e}")
-                    return
-            elif dtype.kind == 'M':  # Datetime
-                try:
-                    min_date = datetime.strptime(entry[0].get(), '%Y-%m-%d')
-                    max_date = datetime.strptime(entry[1].get(), '%Y-%m-%d')
-                    if min_date > max_date:
-                        raise ValueError("Start date cannot be later than end date.")
-                    conditions.append((dataset[field] >= min_date) & (dataset[field] <= max_date))
-                    active_filters.append(f"{field} from {min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}")
-# datetime handling has already been validated for min_date and max_date above
-                except ValueError as e:
-                    messagebox.showerror("Invalid Input", f"Please enter valid dates for {field}: {e}")
-                    return  # Exit the function early if there's an error
+            else:  # Numeric or Datetime
+                min_val, max_val = float(entry[0].get()), float(entry[1].get())
+                conditions.append((dataset[field] >= min_val) & (dataset[field] <= max_val))
+                active_filters.append(f"{field} between {min_val} and {max_val}")
 
         if conditions:
             combined_condition = conditions[0]
             for cond in conditions[1:]:
-                combined_condition &= cond  # Use bitwise AND to combine conditions
-            dataset = dataset[combined_condition]
-            update_dropdowns(dataset)
-            active_filters_text = '; '.join(active_filters)
-            filter_label.config(text=f"Active Filters: {active_filters_text}" if active_filters else "No active filters")
-        else:
-            # Notify user no filters have been applied or no conditions were changed
-            messagebox.showinfo("Filter Info", "No filters have been applied or no changes were made to the existing filters.")
+                combined_condition &= cond
+            dataset = dataset.loc[combined_condition]
 
-        filter_window.destroy()
+        update_dropdowns(dataset)
+        filter_label.config(text="Active Filters: " + "; ".join(active_filters) if active_filters else "No active filters")
+
+    def reset_filters():
+        if last_file_path:
+            try:
+                if last_file_path.endswith('.csv'):
+                    dataset = pd.read_csv(last_file_path)
+                else:
+                    dataset = pd.read_excel(last_file_path)
+                update_dropdowns(dataset)
+                filter_label.config(text="No active filters")
+                filter_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to reload file: {str(e)}")
+        else:
+            messagebox.showinfo("Reset Info", "No file has been loaded yet.")
 
     apply_button = ttk.Button(filter_window, text="Apply Filters", command=apply_filters)
-    apply_button.pack(padx=10, pady=10)
+    apply_button.pack(side="left", padx=5, pady=10)
 
+    reset_button = ttk.Button(filter_window, text="Reset Filters", command=reset_filters)
+    reset_button.pack(side="right", padx=5, pady=10)
 
 def load_file():
+    global last_file_path, dataset  # Include dataset if you modify it globally
     file_path = filedialog.askopenfilename(filetypes=[("CSV and Excel Files", "*.csv;*.xlsx")])
     if file_path:
+        last_file_path = file_path  # Update last_file_path
         try:
             if file_path.endswith(".csv"):
                 data = pd.read_csv(file_path)
@@ -212,16 +191,39 @@ def update_dropdowns(data):
     """Update listboxes with new data after loading or applying filters."""
     global dataset
     dataset = data
+
+    # Retrieve current selections to reapply after updating the list
+    selected_x_indices = list(x_axis_listbox.curselection())
+    selected_y_indices = list(y_axis_listbox.curselection())
+    selected_x_values = [x_axis_listbox.get(i) for i in selected_x_indices]
+    selected_y_values = [y_axis_listbox.get(i) for i in selected_y_indices]
+
     x_axis_listbox.delete(0, tk.END)
     y_axis_listbox.delete(0, tk.END)
-    for column in data.columns:
-        x_axis_listbox.insert(tk.END, column)
-        y_axis_listbox.insert(tk.END, column)
 
-    # Optionally, you can add a message or disable certain UI elements if the dataset is empty
     if dataset.empty:
-        print("Warning: The dataset is empty after filtering.")
+        # Notify the user that the dataset is empty after filtering
+        messagebox.showinfo("Update", "The dataset is empty after filtering.")
+        x_axis_listbox.config(state='disabled')
+        y_axis_listbox.config(state='disabled')
+    else:
+        x_axis_listbox.config(state='normal')
+        y_axis_listbox.config(state='normal')
+        new_x_indices = []
+        new_y_indices = []
+        for idx, column in enumerate(data.columns):
+            x_axis_listbox.insert(tk.END, column)
+            y_axis_listbox.insert(tk.END, column)
+            if column in selected_x_values:
+                new_x_indices.append(idx)
+            if column in selected_y_values:
+                new_y_indices.append(idx)
 
+        # Reapply previous selections if still relevant
+        for idx in new_x_indices:
+            x_axis_listbox.selection_set(idx)
+        for idx in new_y_indices:
+            y_axis_listbox.selection_set(idx)
 
 def generate_dashboard_and_save():
     try:
@@ -994,6 +996,7 @@ chart_type_label = ttk.Label(frame, text="Chart Type:")
 chart_type_label.grid(column=0, row=5, padx=10, pady=10)
 chart_type_dropdown = ttk.Combobox(frame)
 chart_type_dropdown.grid(column=1, row=5, padx=10, pady=10)
+chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
 chart_type_dropdown.bind("<<ComboboxSelected>>", lambda event: [check_chart_suitability(), update_aggression_options_based_on_chart_type()])
 
 title_font_size_label = ttk.Label(frame, text="Title Font Size:")
