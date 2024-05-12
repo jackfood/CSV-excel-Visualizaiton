@@ -13,7 +13,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.2.0512.1*")
+root.title("CSV/Excel Data Visualizer V1.5.3.0512.2")
 
 global x_selected_fields, y_selected_fields, dataset
 x_selected_fields = []
@@ -77,6 +77,66 @@ def ask_for_bar_customization():
     else:
         return 'desc', min(len(dataset), 10)  # Default order and number of items
 
+def filter_data():
+    if not x_axis_listbox.curselection():
+        messagebox.showwarning("Filter Warning", "Please select a field from the X-Axis listbox.")
+        return
+
+    if len(x_axis_listbox.curselection()) > 1:
+        messagebox.showwarning("Filter Warning", "Please select only one field for filtering.")
+        return
+
+    selected_field = x_axis_listbox.get(x_axis_listbox.curselection()[0])
+    unique_values = dataset[selected_field].unique()
+
+    if dataset[selected_field].dtype == 'object':
+        filter_window = tk.Toplevel(root)
+        filter_window.title("Filter Options")
+
+        filter_listbox = tk.Listbox(filter_window, selectmode=tk.MULTIPLE, width=30, height=10)
+        filter_listbox.pack(padx=10, pady=10)
+
+        for value in sorted(unique_values):
+            filter_listbox.insert(tk.END, value)
+
+        def apply_filter():
+            selected_values = [filter_listbox.get(idx) for idx in filter_listbox.curselection()]
+            filtered_dataset = dataset[dataset[selected_field].isin(selected_values)]
+            update_dropdowns(filtered_dataset)
+            filter_label.config(text=f"Filter: {selected_field} in {', '.join(selected_values)}")
+            global x_selected_fields, y_selected_fields
+            x_selected_fields = [field for field in x_selected_fields if field in filtered_dataset.columns]
+            y_selected_fields = [field for field in y_selected_fields if field in filtered_dataset.columns]
+            filter_window.destroy()
+
+        apply_button = ttk.Button(filter_window, text="Apply Filter", command=apply_filter)
+        apply_button.pack(padx=10, pady=10)
+    else:
+        min_value = dataset[selected_field].min()
+        max_value = dataset[selected_field].max()
+
+        filter_window = tk.Toplevel(root)
+        filter_window.title("Filter Options")
+
+        min_entry = ttk.Entry(filter_window)
+        min_entry.insert(0, str(min_value))
+        min_entry.pack(padx=10, pady=10)
+
+        max_entry = ttk.Entry(filter_window)
+        max_entry.insert(0, str(max_value))
+        max_entry.pack(padx=10, pady=10)
+
+        def apply_filter():
+            min_val = float(min_entry.get())
+            max_val = float(max_entry.get())
+            filtered_dataset = dataset[(dataset[selected_field] >= min_val) & (dataset[selected_field] <= max_val)]
+            update_dropdowns(filtered_dataset)
+            filter_label.config(text=f"Filter: {selected_field} between {min_val} and {max_val}")
+            filter_window.destroy()
+
+        apply_button = ttk.Button(filter_window, text="Apply Filter", command=apply_filter)
+        apply_button.pack(padx=10, pady=10)
+
 def load_file():
     file_path = filedialog.askopenfilename(filetypes=[("CSV and Excel Files", "*.csv;*.xlsx")])
     if file_path:
@@ -100,14 +160,11 @@ def get_chart_size():
 def update_dropdowns(data):
     global dataset
     dataset = data
-    column_names = dataset.columns.tolist()
     x_axis_listbox.delete(0, tk.END)
     y_axis_listbox.delete(0, tk.END)
-    for col in column_names:
-        x_axis_listbox.insert(tk.END, col)
-        y_axis_listbox.insert(tk.END, col)
-    chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
-    update_aggression_options_based_on_chart_type()
+    for column in dataset.columns:
+        x_axis_listbox.insert(tk.END, column)
+        y_axis_listbox.insert(tk.END, column)
 
 
 def generate_dashboard_and_save():
@@ -843,139 +900,145 @@ frame = ttk.Frame(root, padding="10")
 frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
 load_button = ttk.Button(frame, text="Load File", command=load_file)
-load_button.grid(column=0, row=0, padx=10, pady=10)
+load_button.grid(column=0, row=0, padx=10, pady=1)
+
+filter_label = ttk.Label(frame, text="")
+filter_label.grid(column=1, row=1, padx=10, pady=1)
+
+filter_button = ttk.Button(frame, text="Filter", command=filter_data)
+filter_button.grid(column=2, row=1, padx=10, pady=1)
 
 use_seaborn = tk.BooleanVar()
 use_seaborn.set(False)
 seaborn_label = ttk.Label(frame, text="Use Seaborn:")
-seaborn_label.grid(column=0, row=1, padx=10, pady=10)
+seaborn_label.grid(column=0, row=2, padx=10, pady=1)
 seaborn_radio_button = ttk.Radiobutton(frame, text="Yes", variable=use_seaborn, value=True)
-seaborn_radio_button.grid(column=1, row=1, padx=10, pady=10)
+seaborn_radio_button.grid(column=1, row=2, padx=10, pady=1)
 matplotlib_radio_button = ttk.Radiobutton(frame, text="No", variable=use_seaborn, value=False)
-matplotlib_radio_button.grid(column=2, row=1, padx=10, pady=10)
+matplotlib_radio_button.grid(column=2, row=2, padx=10, pady=1)
 
 x_axis_label = ttk.Label(frame, text="X Axis Field:")
-x_axis_label.grid(column=0, row=2, padx=10, pady=10)
+x_axis_label.grid(column=0, row=3, padx=10, pady=10)
 x_axis_listbox = Listbox(frame, selectmode=MULTIPLE, width=30, height=5)
-x_axis_listbox.grid(column=1, row=2, padx=10, pady=10)
+x_axis_listbox.grid(column=1, row=3, padx=10, pady=10)
 
 store_x_button = ttk.Button(frame, text="Store X-Axis Selection", command=store_x_axis_selection)
-store_x_button.grid(column=2, row=2, padx=10, pady=10)
+store_x_button.grid(column=2, row=3, padx=10, pady=10)
 
 y_axis_label = ttk.Label(frame, text="Y Axis Field:")
-y_axis_label.grid(column=0, row=3, padx=10, pady=10)
+y_axis_label.grid(column=0, row=4, padx=10, pady=10)
 y_axis_listbox = Listbox(frame, selectmode=MULTIPLE, width=30, height=5)
-y_axis_listbox.grid(column=1, row=3, padx=10, pady=10)
+y_axis_listbox.grid(column=1, row=4, padx=10, pady=10)
 
 store_y_button = ttk.Button(frame, text="Store Y-Axis Selection", command=store_y_axis_selection)
-store_y_button.grid(column=2, row=3, padx=10, pady=10)
+store_y_button.grid(column=2, row=4, padx=10, pady=10)
 
 chart_type_label = ttk.Label(frame, text="Chart Type:")
-chart_type_label.grid(column=0, row=4, padx=10, pady=10)
+chart_type_label.grid(column=0, row=5, padx=10, pady=10)
 chart_type_dropdown = ttk.Combobox(frame)
-chart_type_dropdown.grid(column=1, row=4, padx=10, pady=10)
+chart_type_dropdown.grid(column=1, row=5, padx=10, pady=10)
 chart_type_dropdown.bind("<<ComboboxSelected>>", lambda event: [check_chart_suitability(), update_aggression_options_based_on_chart_type()])
 
 title_font_size_label = ttk.Label(frame, text="Title Font Size:")
-title_font_size_label.grid(column=0, row=5, padx=10, pady=1)
+title_font_size_label.grid(column=0, row=6, padx=10, pady=1)
 title_font_size_var = tk.StringVar()
 title_font_size_var.set("14")
 title_font_size_entry = ttk.Entry(frame, textvariable=title_font_size_var)
-title_font_size_entry.grid(column=1, row=5, padx=10, pady=1)
+title_font_size_entry.grid(column=1, row=6, padx=10, pady=1)
 
 x_axis_font_size_label = ttk.Label(frame, text="X-Axis Font Size:")
-x_axis_font_size_label.grid(column=0, row=6, padx=10, pady=1)
+x_axis_font_size_label.grid(column=0, row=7, padx=10, pady=1)
 x_axis_font_size_var = tk.StringVar()
 x_axis_font_size_var.set("10")
 x_axis_font_size_entry = ttk.Entry(frame, textvariable=x_axis_font_size_var)
-x_axis_font_size_entry.grid(column=1, row=6, padx=10, pady=1)
+x_axis_font_size_entry.grid(column=1, row=7, padx=10, pady=1)
 
 y_axis_font_size_label = ttk.Label(frame, text="Y-Axis Font Size:")
-y_axis_font_size_label.grid(column=0, row=7, padx=10, pady=1)
+y_axis_font_size_label.grid(column=0, row=8, padx=10, pady=1)
 y_axis_font_size_var = tk.StringVar()
 y_axis_font_size_var.set("10")
 y_axis_font_size_entry = ttk.Entry(frame, textvariable=y_axis_font_size_var)
-y_axis_font_size_entry.grid(column=1, row=7, padx=10, pady=1)
+y_axis_font_size_entry.grid(column=1, row=8, padx=10, pady=1)
 
 # Font size input for the value labels
 value_label_font_size_var = tk.StringVar(value="7")
 value_label_font_size_label = ttk.Label(frame, text="Bar / Line Count Label Size:")
 value_label_font_size_entry = ttk.Entry(frame, textvariable=value_label_font_size_var, width=5)
-value_label_font_size_label.grid(column=0, row=8, padx=10, pady=1)
-value_label_font_size_entry.grid(column=1, row=8, padx=10, pady=1)
+value_label_font_size_label.grid(column=0, row=9, padx=10, pady=1)
+value_label_font_size_entry.grid(column=1, row=9, padx=10, pady=1)
 
 x_tick_label_rotation_label = ttk.Label(frame, text="X-Axis Tick Label Rotation:")
-x_tick_label_rotation_label.grid(column=0, row=9, padx=10, pady=1)
+x_tick_label_rotation_label.grid(column=0, row=10, padx=10, pady=1)
 x_tick_label_rotation_var = tk.IntVar()
 x_tick_label_rotation_var.set(45)
 x_radio_0 = ttk.Radiobutton(frame, text="0", variable=x_tick_label_rotation_var, value=0)
-x_radio_0.grid(column=1, row=9, padx=5, pady=1)
+x_radio_0.grid(column=1, row=10, padx=5, pady=1)
 x_radio_45 = ttk.Radiobutton(frame, text="45", variable=x_tick_label_rotation_var, value=45)
-x_radio_45.grid(column=2, row=9, padx=5, pady=1)
+x_radio_45.grid(column=2, row=10, padx=5, pady=1)
 x_radio_90 = ttk.Radiobutton(frame, text="90", variable=x_tick_label_rotation_var, value=90)
-x_radio_90.grid(column=3, row=9, padx=5, pady=1)
+x_radio_90.grid(column=3, row=10, padx=5, pady=1)
 
 y_tick_label_rotation_label = ttk.Label(frame, text="Y-Axis Tick Label Rotation:")
-y_tick_label_rotation_label.grid(column=0, row=10, padx=10, pady=1)
+y_tick_label_rotation_label.grid(column=0, row=11, padx=10, pady=1)
 y_tick_label_rotation_var = tk.IntVar()
 y_tick_label_rotation_var.set(0)
 y_radio_0 = ttk.Radiobutton(frame, text="0", variable=y_tick_label_rotation_var, value=0)
-y_radio_0.grid(column=1, row=10, padx=5, pady=1)
+y_radio_0.grid(column=1, row=11, padx=5, pady=1)
 y_radio_45 = ttk.Radiobutton(frame, text="45", variable=y_tick_label_rotation_var, value=45)
-y_radio_45.grid(column=2, row=10, padx=5, pady=1)
+y_radio_45.grid(column=2, row=11, padx=5, pady=1)
 y_radio_90 = ttk.Radiobutton(frame, text="90", variable=y_tick_label_rotation_var, value=90)
-y_radio_90.grid(column=3, row=10, padx=5, pady=1)
+y_radio_90.grid(column=3, row=11, padx=5, pady=1)
 
 chart_size_label = ttk.Label(frame, text="Chart Size:")
-chart_size_label.grid(column=0, row=11, padx=10, pady=1)
+chart_size_label.grid(column=0, row=12, padx=10, pady=1)
 chart_size = tk.StringVar()
 chart_size.set("Medium")
 chart_size_radio1 = ttk.Radiobutton(frame, text="Small", variable=chart_size, value="Small")
-chart_size_radio1.grid(column=1, row=11, padx=5, pady=1)
+chart_size_radio1.grid(column=1, row=12, padx=5, pady=1)
 chart_size_radio2 = ttk.Radiobutton(frame, text="Medium", variable=chart_size, value="Medium")
-chart_size_radio2.grid(column=2, row=11, padx=5, pady=1)
+chart_size_radio2.grid(column=2, row=12, padx=5, pady=1)
 chart_size_radio3 = ttk.Radiobutton(frame, text="Large", variable=chart_size, value="Large")
-chart_size_radio3.grid(column=3, row=11, padx=5, pady=1)
+chart_size_radio3.grid(column=3, row=12, padx=5, pady=1)
 
 recommendation_button = ttk.Button(frame, text="Update Recommendation", command=recommend_chart)
-recommendation_button.grid(column=0, row=12, padx=10, pady=1)
+recommendation_button.grid(column=0, row=13, padx=10, pady=1)
 
 visualize_button = ttk.Button(frame, text="Visualize", command=generate_visualization)
-visualize_button.grid(column=1, row=12, padx=5, pady=1)
+visualize_button.grid(column=1, row=13, padx=5, pady=1)
 
 # Add the button for saving the dashboard
 dashboard_button = ttk.Button(frame, text="Generate Dashboard", command=generate_dashboard_and_save)
-dashboard_button.grid(column=2, row=12, pady=5, padx=1)
+dashboard_button.grid(column=2, row=13, pady=5, padx=1)
 
 clear_button = ttk.Button(frame, text="Clear Selection", command=clear_selections)
-clear_button.grid(column=1, row=13, padx=5, pady=1)
+clear_button.grid(column=1, row=14, padx=5, pady=1)
 
 recommendation_label = ttk.Label(frame, text="")
-recommendation_label.grid(row=13, column=0, padx=10, pady=1)
+recommendation_label.grid(row=14, column=0, padx=10, pady=1)
 
 generate_all_var = tk.BooleanVar()
 generate_all_checkbutton = tk.Checkbutton(frame, text="Generate All Charts", variable=generate_all_var)
-generate_all_checkbutton.grid(column=0, row=14, padx=10, pady=1)
+generate_all_checkbutton.grid(column=0, row=15, padx=10, pady=1)
 
 # Checkbox for Display Aggression Line in Scatter Plot
 display_aggression = tk.IntVar()
 aggression_checkbutton = tk.Checkbutton(frame, text="Display Aggression Line", variable=display_aggression)
-aggression_checkbutton.grid(column=1, row=14, padx=10, pady=1)
+aggression_checkbutton.grid(column=1, row=15, padx=10, pady=1)
 
 # Checkbox for Display Skew Line in Histogram
 display_skew = tk.IntVar()
 skew_line_checkbutton = tk.Checkbutton(frame, text="Display Skew Line", variable=display_skew)
-skew_line_checkbutton.grid(column=2, row=14, padx=10, pady=1)
+skew_line_checkbutton.grid(column=2, row=15, padx=10, pady=1)
 
 # Checkbox for displaying values on bars/lines
 display_values = tk.IntVar(value=0)
 display_values_checkbutton = tk.Checkbutton(frame, text="Display Values", variable=display_values)
-display_values_checkbutton.grid(column=0, row=15, padx=10, pady=1)
+display_values_checkbutton.grid(column=0, row=16, padx=10, pady=1)
 
 # Checkbox for customization option
 enable_customization = tk.IntVar()
 customization_checkbutton = tk.Checkbutton(frame, text="Enable Customization", variable=enable_customization)
-customization_checkbutton.grid(column=1, row=15, padx=10, pady=1)
+customization_checkbutton.grid(column=1, row=16, padx=10, pady=1)
 
 # Create a variable to store the selected aggregation method
 aggregation_method_var = tk.StringVar(value='mean')
@@ -983,7 +1046,7 @@ aggregation_method_var = tk.StringVar(value='mean')
 # Create a dropdown menu for selecting the aggregation method
 aggregation_method_dropdown = ttk.Combobox(frame, textvariable=aggregation_method_var, state='readonly')
 aggregation_method_dropdown['values'] = ['mean', 'sum', 'max', 'min']
-aggregation_method_dropdown.grid(column=2, row=15, padx=10, pady=1)
+aggregation_method_dropdown.grid(column=2, row=16, padx=10, pady=1)
 
 # Initial state setup for these options
 aggression_checkbutton.config(state=tk.DISABLED)
