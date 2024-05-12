@@ -1,16 +1,19 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 import seaborn as sns
 from tkinter import filedialog, messagebox, simpledialog, ttk, Listbox, MULTIPLE, IntVar, StringVar, Checkbutton
 import tkinter as tk
 import numpy as np
 from scipy.stats import norm, skew, linregress
 from PIL import Image, ImageTk
+from dateutil.parser import parse
+import itertools
 import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.2.0511.3")
+root.title("CSV/Excel Data Visualizer V1.5.2.0512.1")
 
 global x_selected_fields, y_selected_fields, dataset
 x_selected_fields = []
@@ -104,12 +107,8 @@ def update_dropdowns(data):
         x_axis_listbox.insert(tk.END, col)
         y_axis_listbox.insert(tk.END, col)
     chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
-    update_options_based_on_chart_type()
+    update_aggression_options_based_on_chart_type()
 
-
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
-from tkinter import filedialog, messagebox
 
 def generate_dashboard_and_save():
     try:
@@ -190,7 +189,7 @@ def generate_dashboard_and_save():
     except Exception as e:
         return
 
-def update_options_based_on_chart_type():
+def update_aggression_options_based_on_chart_type():
     chart_type = chart_type_dropdown.get()
 
     # Enable/Disable value display options
@@ -214,6 +213,12 @@ def update_options_based_on_chart_type():
         aggression_checkbutton.config(state=tk.DISABLED)
         skew_line_checkbutton.config(state=tk.DISABLED)
 
+    # Enable/Disable aggregation method dropdown
+    if chart_type == "Line":
+        aggregation_method_dropdown.config(state=tk.NORMAL)
+    else:
+        aggregation_method_dropdown.config(state=tk.DISABLED)
+
 def display_values_on_bars(ax, bars, font_size=4):
     for bar in bars:
         if isinstance(bar, plt.Line2D):
@@ -233,9 +238,9 @@ def store_y_axis_selection():
     global y_selected_fields
     y_selected_fields = [y_axis_listbox.get(idx) for idx in y_axis_listbox.curselection()]
     y_axis_label["text"] = f"Y Axis (Selected: {', '.join(y_selected_fields)}):" if y_selected_fields else "Y Axis:"
-    update_options_based_on_selection()
+    update_aggression_options_based_on_selection()
 
-def update_options_based_on_selection():
+def update_aggression_options_based_on_selection():
     if x_selected_fields and y_selected_fields and all(dataset[col].dtype.kind in 'fi' for col in x_selected_fields + y_selected_fields):
         aggression_checkbutton.config(state=tk.NORMAL)
     else:
@@ -246,7 +251,7 @@ def recommend_chart():
         recommendation = advanced_chart_recommendation(x_selected_fields, y_selected_fields, dataset)
         recommendation_label["text"] = f"Recommended Chart: {recommendation}"
         chart_type_dropdown.set(recommendation)
-        update_options_based_on_chart_type()
+        update_aggression_options_based_on_chart_type()
     else:
         recommendation_label["text"] = "Select fields for X and Y axes."
 
@@ -300,6 +305,51 @@ def advanced_chart_recommendation(x_columns, y_columns, dataset):
 
     # Default for numeric types or mixed usage
     return "Scatter Plot" if total_entries > 1000 else "Line"
+
+def aggregate_data(data, x_col, y_col, aggregation_method):
+    if aggregation_method == 'mean':
+        aggregated_data = data.groupby(x_col)[y_col].mean().reset_index()
+    elif aggregation_method == 'sum':
+        aggregated_data = data.groupby(x_col)[y_col].sum().reset_index()
+    elif aggregation_method == 'max':
+        aggregated_data = data.groupby(x_col)[y_col].max().reset_index()
+    elif aggregation_method == 'min':
+        aggregated_data = data.groupby(x_col)[y_col].min().reset_index()
+    else:
+        raise ValueError(f"Unsupported aggregation method: {aggregation_method}")
+    return aggregated_data
+
+
+def plot_line(ax, plot_data):
+    if len(x_selected_fields) != 1 or not y_selected_fields:
+        messagebox.showerror("Line - Error", "Line plot requires exactly one X field and at least one Y field.")
+        return
+
+    x_col = x_selected_fields[0]
+    aggregation_method = aggregation_method_var.get()
+
+    # Define a color palette or a list of colors
+    colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
+
+    for y_col, color in zip(y_selected_fields, itertools.cycle(colors)):
+        aggregated_data = aggregate_data(plot_data, x_col, y_col, aggregation_method)
+
+        if use_seaborn.get():
+            line = sns.lineplot(data=aggregated_data, x=x_col, y=y_col, ax=ax, color=color, marker='o', markersize=5)
+        else:
+            line, = ax.plot(aggregated_data[x_col], aggregated_data[y_col], label=y_col, color=color, marker='o', markersize=5)
+
+        if display_values.get():
+            font_size = int(value_label_font_size_var.get())
+            for i, v in enumerate(aggregated_data[y_col]):
+                ax.text(aggregated_data[x_col][i], v, f"{v:.2f}", fontsize=font_size, ha='center', va='bottom')
+
+    # Set x-axis labels only for the actual data points
+    x_labels = aggregated_data[x_col].unique()
+    ax.set_xticks(x_labels)
+    ax.set_xticklabels(x_labels)
+
+    ax.legend()
 
 
 def plot_bar(ax, plot_data):
@@ -449,16 +499,36 @@ def plot_scatter(ax, plot_data):
 
     ax.legend()
 
-
 def plot_dual_axes(ax, plot_data):
-    if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
-        messagebox.showerror("Error", "Dual Axes plot requires exactly one X field and one Y field.")
+    if len(x_selected_fields) != 1 or len(y_selected_fields) != 2:
+        messagebox.showerror("Error", "Dual Axes plot requires exactly one X field and two Y fields.")
         return
-    ax2 = ax.twinx()
-    ax.plot(plot_data[x_selected_fields[0]], plot_data[y_selected_fields[0]], label=x_selected_fields[0], color='#66c2a5')
-    ax2.plot(plot_data[y_selected_fields[0]], label=y_selected_fields[0], color='#fc8d62')
-    ax2.set_ylabel(", ".join(y_selected_fields), fontsize=int(y_axis_font_size_var.get()))
-    ax.legend()
+
+    x_field = x_selected_fields[0]
+    y_field1 = y_selected_fields[0]
+    y_field2 = y_selected_fields[1]
+
+    color1 = '#66c2a5'
+    color2 = '#fc8d62'
+
+    if use_seaborn.get():
+        sns.lineplot(x=x_field, y=y_field1, data=plot_data, ax=ax, color=color1, label=f"{y_field1} (left axis)")
+        ax2 = ax.twinx()
+        sns.lineplot(x=x_field, y=y_field2, data=plot_data, ax=ax2, color=color2, label=f"{y_field2} (right axis)")
+    else:
+        ax.plot(plot_data[x_field], plot_data[y_field1], color=color1, label=f"{y_field1} (left axis)")
+        ax.set_xlabel(x_field, fontsize=int(x_axis_font_size_var.get()))
+        ax.set_ylabel(y_field1, fontsize=int(y_axis_font_size_var.get()))
+
+        ax2 = ax.twinx()
+        ax2.plot(plot_data[x_field], plot_data[y_field2], color=color2, label=f"{y_field2} (right axis)")
+        ax2.set_ylabel(y_field2, fontsize=int(y_axis_font_size_var.get()))
+
+    lines, labels = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax2.legend(lines + lines2, labels + labels2, loc='upper right')
+
+    ax.figure.tight_layout()
 
 def plot_histogram(ax, plot_data):
     # Check if a single field is selected
@@ -554,36 +624,36 @@ def plot_box(ax, plot_data):
             ax.boxplot([plot_data[y_field].values], labels=[x_field])
 
 def plot_pie(ax, plot_data):
-    # Check if the selected fields lists are initialized and have the correct length
     if not x_selected_fields or len(x_selected_fields) != 1:
-        messagebox.showerror("Pie - Error", "Pie Chart requires exactly one field selected for X Axis.")
-        return
-    
-    if not y_selected_fields or len(y_selected_fields) == 0:
-        messagebox.showerror("Pie - Error", "No field selected for Y Axis.")
+        messagebox.showerror("Pie - Error", "Pie Chart requires exactly one field selected for the X Axis.")
         return
 
-    # Check if the selected field contains appropriate data for a pie chart (non-numeric and categorical)
-    if pd.api.types.is_numeric_dtype(plot_data[y_selected_fields[0]]):
+    x_field = x_selected_fields[0]
+    if pd.api.types.is_numeric_dtype(plot_data[x_field]):
         messagebox.showerror("Error", "Pie Chart requires categorical data, not numeric data.")
         return
 
-    # Calculate the value counts of the categories which will determine the size of each pie slice
     try:
-        category_counts = plot_data[y_selected_fields[0]].value_counts()
+        category_counts = plot_data[x_field].value_counts()
     except KeyError:
-        messagebox.showerror("Pie - Error", f"Field '{y_selected_fields[0]}' not found in data.")
+        messagebox.showerror("Pie - Error", f"Field '{x_field}' not found in data.")
         return
 
-    # Plot the pie chart using the counts
-    category_counts.plot.pie(ax=ax, autopct='%1.1f%%', startangle=90, colors=['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3'])
+    colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
+    wedges, texts, autotexts = ax.pie(category_counts, autopct='%1.1f%%', startangle=90, colors=colors[:len(category_counts)],
+                                      wedgeprops=dict(width=0.3, edgecolor='black', linewidth=1.5))
+    
+    ax.set_ylabel('')
+    ax.set_title(f"Pie Chart: {x_field}", fontsize=14)
+    ax.axis('equal')
+    ax.legend(wedges, category_counts.index, title=x_field, loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
 
-    # Additional aesthetics for clarity
-    ax.set_ylabel('')  # Pie charts do not need a y-axis label
-    ax.set_title(f"Pie Chart: {y_selected_fields[0]}", fontsize=14)
-
-    # Ensure no chart legend overlaps
-    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+    for text in autotexts:
+        text.set_color('black')
+        text.set_fontsize(10)
+        text.set_weight('bold')
+    for text in texts:
+        text.set_fontsize(10)
 
 def plot_column(ax, plot_data):
     if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
@@ -636,21 +706,51 @@ def plot_column(ax, plot_data):
     except Exception as e:
         messagebox.showerror("ColumnBar - Error", f"Failed to plot column chart: {str(e)}")
 
-def plot_line(ax, plot_data):
-    if len(x_selected_fields) != 1 or not y_selected_fields:
-        messagebox.showerror("Line - Error", "Line plot requires exactly one X field and at least one Y field.")
+def analyze_data_types(selected_fields):
+    if not selected_fields:
+        return None
+    data_types = dataset[selected_fields].dtypes
+    if all(dtype.kind in 'fi' for dtype in data_types):  # Check if all are float or int
+        return 'numeric'
+    elif all(dtype.kind in 'O' or dtype.name == 'category' for dtype in data_types):  # Check if all are object or category
+        return 'categorical'
+    else:
+        return 'mixed'
+
+def check_chart_suitability():
+    x_type = analyze_data_types(x_selected_fields)
+    y_type = analyze_data_types(y_selected_fields)
+
+    chart_type = chart_type_dropdown.get()
+    if not x_type or not y_type:
+        # If no fields are selected yet, return without prompt
         return
-    for y_col in y_selected_fields:
-        if use_seaborn.get():
-            line = sns.lineplot(data=plot_data, x=x_selected_fields[0], y=y_col, ax=ax, color='#66c2a5')
-        else:
-            line, = ax.plot(plot_data[x_selected_fields[0]], plot_data[y_col], label=y_col, color='#66c2a5')
+    
+    chart_requirements = {
+        "Line": ("numeric", "numeric"),
+        "Bar": ("categorical", "numeric"),
+        "Column": ("categorical", "numeric"),
+        "Area": ("numeric", "numeric"),
+        "Stacked Bar": ("categorical", "numeric"),
+        "Scatter Plot": ("numeric", "numeric"),
+        "Dual Axes": ("numeric", "numeric"),
+        "Histogram": ("numeric", None),
+        "Box Plot": (None, "numeric"),
+        "Pie Chart": ("categorical", None)
+    }
+    
+    required_x, required_y = chart_requirements.get(chart_type, (None, None))
 
-        if display_values.get():
-            font_size = int(value_label_font_size_var.get())
-            display_values_on_bars(ax, [line], font_size=font_size)
+    messages = []
+    if required_x and required_x != x_type:
+        messages.append(f"X axis should be {required_x} for a {chart_type}.")
+    if required_y and required_y != y_type:
+        messages.append(f"Y axis should be {required_y} for a {chart_type}.")
 
-    ax.legend()
+    if messages:
+        messagebox.showwarning("Chart Type Suitability", " ".join(messages))
+    else:
+        messagebox.showinfo("Chart Type Suitability", f"{chart_type} is suitable for the selected data types.")
 
 
 def generate_visualization():
@@ -774,7 +874,7 @@ chart_type_label = ttk.Label(frame, text="Chart Type:")
 chart_type_label.grid(column=0, row=4, padx=10, pady=10)
 chart_type_dropdown = ttk.Combobox(frame)
 chart_type_dropdown.grid(column=1, row=4, padx=10, pady=10)
-chart_type_dropdown.bind("<<ComboboxSelected>>", lambda event: update_options_based_on_chart_type())
+chart_type_dropdown.bind("<<ComboboxSelected>>", lambda event: [check_chart_suitability(), update_aggression_options_based_on_chart_type()])
 
 title_font_size_label = ttk.Label(frame, text="Title Font Size:")
 title_font_size_label.grid(column=0, row=5, padx=10, pady=1)
@@ -876,6 +976,14 @@ display_values_checkbutton.grid(column=0, row=15, padx=10, pady=1)
 enable_customization = tk.IntVar()
 customization_checkbutton = tk.Checkbutton(frame, text="Enable Customization", variable=enable_customization)
 customization_checkbutton.grid(column=1, row=15, padx=10, pady=1)
+
+# Create a variable to store the selected aggregation method
+aggregation_method_var = tk.StringVar(value='mean')
+
+# Create a dropdown menu for selecting the aggregation method
+aggregation_method_dropdown = ttk.Combobox(frame, textvariable=aggregation_method_var, state='readonly')
+aggregation_method_dropdown['values'] = ['mean', 'sum', 'max', 'min']
+aggregation_method_dropdown.grid(column=2, row=15, padx=10, pady=1)
 
 # Initial state setup for these options
 aggression_checkbutton.config(state=tk.DISABLED)
