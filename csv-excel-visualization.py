@@ -937,6 +937,8 @@ chart_type_label = ttk.Label(frame, text="Chart Type:")
 chart_type_label.grid(column=0, row=5, padx=10, pady=10)
 chart_type_dropdown = ttk.Combobox(frame)
 chart_type_dropdown.grid(column=1, row=5, padx=10, pady=10)
+chart_type_dropdown["values"] = ["Line", "Bar", "Column", "Area", "Stacked Bar", 
+                               "Scatter Plot", "Dual Axes", "Histogram", "Box Plot", "Pie Chart"]
 chart_type_dropdown.bind("<<ComboboxSelected>>", lambda event: [check_chart_suitability(), update_aggression_options_based_on_chart_type()])
 
 title_font_size_label = ttk.Label(frame, text="Title Font Size:")
