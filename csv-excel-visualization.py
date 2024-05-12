@@ -13,7 +13,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.3.0512.5")
+root.title("CSV/Excel Data Visualizer V1.5.3.0512.6")
 
 global x_selected_fields, y_selected_fields, dataset, original_dataset, last_file_path
 x_selected_fields = []
@@ -752,6 +752,15 @@ def plot_pie(ax, plot_data):
         messagebox.showerror("Error", "Pie Chart requires categorical data, not numeric data.")
         return
 
+    # Ask user for chart type preference
+    response = simpledialog.askstring("Chart Type", "Type 'pie' for Pie Chart or 'donut' for Donut Chart:")
+    if not response:  # If no input or cancelled dialog, return
+        return
+    response = response.lower().strip()
+    if response not in ['pie', 'donut']:
+        messagebox.showerror("Input Error", "Invalid input. Please enter 'pie' or 'donut'.")
+        return
+
     try:
         category_counts = plot_data[x_field].value_counts()
     except KeyError:
@@ -759,12 +768,15 @@ def plot_pie(ax, plot_data):
         return
 
     colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
-    wedges, texts, autotexts = ax.pie(category_counts, autopct='%1.1f%%', startangle=90, colors=colors[:len(category_counts)],
-                                      wedgeprops=dict(width=0.3, edgecolor='black', linewidth=1.5))
+    wedgeprops = dict(edgecolor='black', linewidth=1.5)
+    if response == 'donut':
+        wedgeprops['width'] = 0.3  # Make it a donut chart
+
+    wedges, texts, autotexts = ax.pie(category_counts, autopct='%1.1f%%', startangle=90, colors=colors[:len(category_counts)], wedgeprops=wedgeprops)
     
     ax.set_ylabel('')
-    ax.set_title(f"Pie Chart: {x_field}", fontsize=14)
-    ax.axis('equal')
+    ax.set_title(f"{response.capitalize()} Chart: {x_field}", fontsize=14)
+    ax.axis('equal')  # This ensures the pie chart is drawn as a circle.
     ax.legend(wedges, category_counts.index, title=x_field, loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
 
     for text in autotexts:
