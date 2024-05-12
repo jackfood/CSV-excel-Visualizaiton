@@ -1,3 +1,6 @@
+# The issue you're facing with the code not allowing multiple selections across different list boxes is likely due to the default behavior of Tkinter Listbox widgets where the selection in one list box interferes with the selection in another when multiple list boxes are placed in the same window. This is governed by the exportselection parameter, which is True by default.
+# To allow multiple selections across different list boxes in the same window, you need to set exportselection=False for each list box. This setting prevents the Tkinter clipboard from automatically clearing selections in other list boxes when a new selection is made.
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
