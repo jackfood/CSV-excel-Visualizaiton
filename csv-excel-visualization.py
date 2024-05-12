@@ -13,7 +13,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.3.0512.4")
+root.title("CSV/Excel Data Visualizer V1.5.3.0512.5")
 
 global x_selected_fields, y_selected_fields, dataset, original_dataset, last_file_path
 x_selected_fields = []
@@ -97,9 +97,11 @@ def filter_data():
         frame.pack(padx=10, pady=5, fill='x', expand=True)
 
         if dtype.kind in 'O':  # Object (treat as categorical)
-            lb = Listbox(frame, selectmode=MULTIPLE, width=50, height=4, exportselection=False)
+            unique_values = sorted(dataset[field].unique())
+            list_height = min(len(unique_values), 8)  # Calculate the appropriate height
+            lb = Listbox(frame, selectmode=MULTIPLE, width=50, height=list_height, exportselection=False)
             lb.pack(side="top", fill="x", expand=True)
-            for value in sorted(dataset[field].unique()):
+            for value in unique_values:
                 lb.insert(tk.END, value)
             entries[field] = lb
         elif dtype.kind in 'iuf' or dtype.kind == 'M':  # Numeric or Datetime
@@ -118,52 +120,53 @@ def filter_data():
 
             entries[field] = (min_entry, max_entry)
 
-    def apply_filters():
-        global dataset
-        conditions = []
-        active_filters = []
-
-        for field, entry in entries.items():
-            dtype = dataset[field].dtype
-            if isinstance(entry, Listbox):  # Categorical
-                selected = [entry.get(idx) for idx in entry.curselection()]
-                if selected:
-                    conditions.append(dataset[field].isin(selected))
-                    active_filters.append(f"{field} in ({', '.join(selected)})")
-            else:  # Numeric or Datetime
-                min_val, max_val = float(entry[0].get()), float(entry[1].get())
-                conditions.append((dataset[field] >= min_val) & (dataset[field] <= max_val))
-                active_filters.append(f"{field} between {min_val} and {max_val}")
-
-        if conditions:
-            combined_condition = conditions[0]
-            for cond in conditions[1:]:
-                combined_condition &= cond
-            dataset = dataset.loc[combined_condition]
-
-        update_dropdowns(dataset)
-        filter_label.config(text="Active Filters: " + "; ".join(active_filters) if active_filters else "No active filters")
-
-    def reset_filters():
-        if last_file_path:
-            try:
-                if last_file_path.endswith('.csv'):
-                    dataset = pd.read_csv(last_file_path)
-                else:
-                    dataset = pd.read_excel(last_file_path)
-                update_dropdowns(dataset)
-                filter_label.config(text="No active filters")
-                filter_window.destroy()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to reload file: {str(e)}")
-        else:
-            messagebox.showinfo("Reset Info", "No file has been loaded yet.")
-
-    apply_button = ttk.Button(filter_window, text="Apply Filters", command=apply_filters)
+    apply_button = ttk.Button(filter_window, text="Apply Filters", command=lambda: apply_filters(entries))
     apply_button.pack(side="left", padx=5, pady=10)
 
-    reset_button = ttk.Button(filter_window, text="Reset Filters", command=reset_filters)
+    reset_button = ttk.Button(filter_window, text="Reset Filters", command=lambda: reset_filters(filter_window))
     reset_button.pack(side="right", padx=5, pady=10)
+
+def apply_filters(entries):
+    global dataset
+    conditions = []
+    active_filters = []
+
+    for field, entry in entries.items():
+        dtype = dataset[field].dtype
+        if isinstance(entry, Listbox):  # Categorical
+            selected = [entry.get(idx) for idx in entry.curselection()]
+            if selected:
+                conditions.append(dataset[field].isin(selected))
+                active_filters.append(f"{field} in ({', '.join(selected)})")
+        else:  # Numeric or Datetime
+            min_val, max_val = float(entry[0].get()), float(entry[1].get())
+            conditions.append((dataset[field] >= min_val) & (dataset[field] <= max_val))
+            active_filters.append(f"{field} between {min_val} and {max_val}")
+
+    if conditions:
+        combined_condition = conditions[0]
+        for cond in conditions[1:]:
+            combined_condition &= cond
+        dataset = dataset.loc[combined_condition]
+
+    update_dropdowns(dataset)
+    filter_label.config(text="Active Filters: " + "; ".join(active_filters) if active_filters else "No active filters")
+
+def reset_filters(filter_window):
+    global dataset, last_file_path
+    if last_file_path:
+        try:
+            if last_file_path.endswith('.csv'):
+                dataset = pd.read_csv(last_file_path)
+            else:
+                dataset = pd.read_excel(last_file_path)
+            update_dropdowns(dataset)
+            filter_label.config(text="No active filters")
+            filter_window.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reload file: {str(e)}")
+    else:
+        messagebox.showinfo("Reset Info", "No file has been loaded yet.")
 
 def load_file():
     global last_file_path, dataset  # Include dataset if you modify it globally
