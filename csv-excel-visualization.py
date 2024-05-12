@@ -13,7 +13,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.2.0512.1")
+root.title("CSV/Excel Data Visualizer V1.5.2.0512.1*")
 
 global x_selected_fields, y_selected_fields, dataset
 x_selected_fields = []
