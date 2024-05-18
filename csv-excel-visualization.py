@@ -13,7 +13,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.3.0512.6")
+root.title("CSV/Excel Data Visualizer V1.5.3.0518.1")
 
 global x_selected_fields, y_selected_fields, dataset, original_dataset, last_file_path
 x_selected_fields = []
@@ -97,11 +97,9 @@ def filter_data():
         frame.pack(padx=10, pady=5, fill='x', expand=True)
 
         if dtype.kind in 'O':  # Object (treat as categorical)
-            unique_values = sorted(dataset[field].unique())
-            list_height = min(len(unique_values), 8)  # Calculate the appropriate height
-            lb = Listbox(frame, selectmode=MULTIPLE, width=50, height=list_height, exportselection=False)
+            lb = Listbox(frame, selectmode=MULTIPLE, width=50, height=4, exportselection=False)
             lb.pack(side="top", fill="x", expand=True)
-            for value in unique_values:
+            for value in sorted(dataset[field].unique()):
                 lb.insert(tk.END, value)
             entries[field] = lb
         elif dtype.kind in 'iuf' or dtype.kind == 'M':  # Numeric or Datetime
@@ -120,53 +118,52 @@ def filter_data():
 
             entries[field] = (min_entry, max_entry)
 
-    apply_button = ttk.Button(filter_window, text="Apply Filters", command=lambda: apply_filters(entries))
+    def apply_filters():
+        global dataset
+        conditions = []
+        active_filters = []
+
+        for field, entry in entries.items():
+            dtype = dataset[field].dtype
+            if isinstance(entry, Listbox):  # Categorical
+                selected = [entry.get(idx) for idx in entry.curselection()]
+                if selected:
+                    conditions.append(dataset[field].isin(selected))
+                    active_filters.append(f"{field} in ({', '.join(selected)})")
+            else:  # Numeric or Datetime
+                min_val, max_val = float(entry[0].get()), float(entry[1].get())
+                conditions.append((dataset[field] >= min_val) & (dataset[field] <= max_val))
+                active_filters.append(f"{field} between {min_val} and {max_val}")
+
+        if conditions:
+            combined_condition = conditions[0]
+            for cond in conditions[1:]:
+                combined_condition &= cond
+            dataset = dataset.loc[combined_condition]
+
+        update_dropdowns(dataset)
+        filter_label.config(text="Active Filters: " + "; ".join(active_filters) if active_filters else "No active filters")
+
+    def reset_filters():
+        if last_file_path:
+            try:
+                if last_file_path.endswith('.csv'):
+                    dataset = pd.read_csv(last_file_path)
+                else:
+                    dataset = pd.read_excel(last_file_path)
+                update_dropdowns(dataset)
+                filter_label.config(text="No active filters")
+                filter_window.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to reload file: {str(e)}")
+        else:
+            messagebox.showinfo("Reset Info", "No file has been loaded yet.")
+
+    apply_button = ttk.Button(filter_window, text="Apply Filters", command=apply_filters)
     apply_button.pack(side="left", padx=5, pady=10)
 
-    reset_button = ttk.Button(filter_window, text="Reset Filters", command=lambda: reset_filters(filter_window))
+    reset_button = ttk.Button(filter_window, text="Reset Filters", command=reset_filters)
     reset_button.pack(side="right", padx=5, pady=10)
-
-def apply_filters(entries):
-    global dataset
-    conditions = []
-    active_filters = []
-
-    for field, entry in entries.items():
-        dtype = dataset[field].dtype
-        if isinstance(entry, Listbox):  # Categorical
-            selected = [entry.get(idx) for idx in entry.curselection()]
-            if selected:
-                conditions.append(dataset[field].isin(selected))
-                active_filters.append(f"{field} in ({', '.join(selected)})")
-        else:  # Numeric or Datetime
-            min_val, max_val = float(entry[0].get()), float(entry[1].get())
-            conditions.append((dataset[field] >= min_val) & (dataset[field] <= max_val))
-            active_filters.append(f"{field} between {min_val} and {max_val}")
-
-    if conditions:
-        combined_condition = conditions[0]
-        for cond in conditions[1:]:
-            combined_condition &= cond
-        dataset = dataset.loc[combined_condition]
-
-    update_dropdowns(dataset)
-    filter_label.config(text="Active Filters: " + "; ".join(active_filters) if active_filters else "No active filters")
-
-def reset_filters(filter_window):
-    global dataset, last_file_path
-    if last_file_path:
-        try:
-            if last_file_path.endswith('.csv'):
-                dataset = pd.read_csv(last_file_path)
-            else:
-                dataset = pd.read_excel(last_file_path)
-            update_dropdowns(dataset)
-            filter_label.config(text="No active filters")
-            filter_window.destroy()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to reload file: {str(e)}")
-    else:
-        messagebox.showinfo("Reset Info", "No file has been loaded yet.")
 
 def load_file():
     global last_file_path, dataset  # Include dataset if you modify it globally
@@ -424,52 +421,112 @@ def advanced_chart_recommendation(x_columns, y_columns, dataset):
     # Default for numeric types or mixed usage
     return "Scatter Plot" if total_entries > 1000 else "Line"
 
+import pandas as pd
+import numpy as np
+import itertools
+import seaborn as sns
+import matplotlib.pyplot as plt
+from tkinter import messagebox
+import matplotlib.dates as mdates
 
 def aggregate_data(data, x_col, y_col, aggregation_method):
     if aggregation_method == 'mean':
-        aggregated_data = data.groupby(x_col)[y_col].mean().reset_index()
+        return data.groupby(x_col, as_index=False)[y_col].mean()
     elif aggregation_method == 'sum':
-        aggregated_data = data.groupby(x_col)[y_col].sum().reset_index()
-    elif aggregation_method == 'max':
-        aggregated_data = data.groupby(x_col)[y_col].max().reset_index()
-    elif aggregation_method == 'min':
-        aggregated_data = data.groupby(x_col)[y_col].min().reset_index()
+        return data.groupby(x_col, as_index=False)[y_col].sum()
+    elif aggregation_method == 'median':
+        return data.groupby(x_col, as_index=False)[y_col].median()
     else:
-        raise ValueError(f"Unsupported aggregation method: {aggregation_method}")
-    return aggregated_data
+        raise ValueError(f"Unknown aggregation method: {aggregation_method}")
 
+def reduce_categories(data, x_col, max_categories):
+    top_categories = data[x_col].value_counts().nlargest(max_categories).index
+    data = data[data[x_col].isin(top_categories)]
+    return data
 
-def plot_line(ax, plot_data):
+def plot_line(ax, data, x_selected_fields, y_selected_fields, aggregation_method='mean', use_seaborn=False, display_values=False, value_label_font_size=8, dual_y_axis=False):
     if len(x_selected_fields) != 1 or not y_selected_fields:
         messagebox.showerror("Line - Error", "Line plot requires exactly one X field and at least one Y field.")
         return
-
+    
     x_col = x_selected_fields[0]
-    aggregation_method = aggregation_method_var.get()
-
-    # Define a color palette or a list of colors
     colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
 
-    for y_col, color in zip(y_selected_fields, itertools.cycle(colors)):
-        aggregated_data = aggregate_data(plot_data, x_col, y_col, aggregation_method)
+    if pd.api.types.is_datetime64_any_dtype(data[x_col]):
+        sorting_option = messagebox.askquestion("Datetime Aggregation", "Would you like to group by Year, Month, Day, Hour, or Minute?")
+        if sorting_option == "Year":
+            data[x_col] = data[x_col].dt.to_period("Y").dt.to_timestamp()
+        elif sorting_option == "Month":
+            data[x_col] = data[x_col].dt.to_period("M").dt.to_timestamp()
+        elif sorting_option == "Day":
+            data[x_col] = data[x_col].dt.date
+        elif sorting_option == "Hour":
+            data[x_col] = data[x_col].dt.floor("H")
+        elif sorting_option == "Minute":
+            data[x_col] = data[x_col].dt.floor("T")
+        sorted_data = data.sort_values(by=[x_col])
+    elif pd.api.types.is_categorical_dtype(data[x_col]) or pd.api.types.is_object_dtype(data[x_col]):
+        unique_categories = data[x_col].nunique()
+        max_categories = 10
+        if unique_categories > max_categories:
+            data = reduce_categories(data, x_col, max_categories)
+        sorted_data = data.sort_values(by=[x_col])
+    elif pd.api.types.is_numeric_dtype(data[x_col]):
+        sorted_data = data.sort_values(by=[x_col])
+    else:
+        sorted_data = data
 
-        if use_seaborn.get():
-            line = sns.lineplot(data=aggregated_data, x=x_col, y=y_col, ax=ax, color=color, marker='o', markersize=5)
+    if dual_y_axis and len(y_selected_fields) > 1:
+        ax2 = ax.twinx()
+        ax2_colors = itertools.cycle(['#8da0cb', '#66c2a5'])  # Different color cycle for the second Y axis
+    else:
+        ax2 = None
+
+    for idx, y_col in enumerate(y_selected_fields):
+        aggregated_data = aggregate_data(sorted_data, x_col, y_col, aggregation_method)
+        
+        if idx == 0 or not dual_y_axis:
+            target_ax = ax
+            color = colors[idx % len(colors)]
         else:
-            line, = ax.plot(aggregated_data[x_col], aggregated_data[y_col], label=y_col, color=color, marker='o', markersize=5)
+            target_ax = ax2
+            color = next(ax2_colors)
+        
+        if use_seaborn:
+            sns.lineplot(data=aggregated_data, x=x_col, y=y_col, ax=target_ax, color=color, marker='o', markersize=5, label=y_col)
+        else:
+            target_ax.plot(aggregated_data[x_col], aggregated_data[y_col], label=y_col, color=color, marker='o', markersize=5)
+        
+        if display_values:
+            for x_val, y_val in zip(aggregated_data[x_col], aggregated_data[y_col]):
+                target_ax.text(x_val, y_val, f"{y_val:.2f}", color=color, fontsize=value_label_font_size, ha='center', va='bottom')
 
-        if display_values.get():
-            font_size = int(value_label_font_size_var.get())
-            for i, v in enumerate(aggregated_data[y_col]):
-                ax.text(aggregated_data[x_col][i], v, f"{v:.2f}", fontsize=font_size, ha='center', va='bottom')
+    # Setting the legend for the primary axis
+    ax.legend(title='Primary Y-axis', loc='upper left', bbox_to_anchor=(1, 1))
+    ax.grid(True)
 
-    # Set x-axis labels only for the actual data points
-    x_labels = aggregated_data[x_col].unique()
-    ax.set_xticks(x_labels)
-    ax.set_xticklabels(x_labels)
+    # Formatting for x-axis labels if they're datetime
+    if pd.api.types.is_datetime64_any_dtype(data[x_col]):
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
 
-    ax.legend()
+    # Additional settings for dual Y-axis mode
+    if dual_y_axis and ax2:
+        ax2.legend(title='Secondary Y-axis', loc='upper left', bbox_to_anchor=(1, 1.15))
+        # Ensure both axes are visible
+        lines_1, labels_1 = ax.get_legend_handles_labels()
+        lines_2, labels_2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right', bbox_to_anchor=(1, 1))
 
+    ax.set_xlabel(x_col)
+    ax.set_ylabel("Primary Y Values")
+    if ax2:
+        ax2.set_ylabel("Secondary Y Values")
+
+    ax.set_title(f"Line Plot of {', '.join(y_selected_fields)} vs. {x_col}")
+
+    # Adjust plot layout to make room for legends outside the plot
+    plt.tight_layout(rect=[0, 0, 0.85, 1])
 
 def plot_bar(ax, plot_data):
     if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
@@ -752,15 +809,6 @@ def plot_pie(ax, plot_data):
         messagebox.showerror("Error", "Pie Chart requires categorical data, not numeric data.")
         return
 
-    # Ask user for chart type preference
-    response = simpledialog.askstring("Chart Type", "Type 'pie' for Pie Chart or 'donut' for Donut Chart:")
-    if not response:  # If no input or cancelled dialog, return
-        return
-    response = response.lower().strip()
-    if response not in ['pie', 'donut']:
-        messagebox.showerror("Input Error", "Invalid input. Please enter 'pie' or 'donut'.")
-        return
-
     try:
         category_counts = plot_data[x_field].value_counts()
     except KeyError:
@@ -768,15 +816,12 @@ def plot_pie(ax, plot_data):
         return
 
     colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
-    wedgeprops = dict(edgecolor='black', linewidth=1.5)
-    if response == 'donut':
-        wedgeprops['width'] = 0.3  # Make it a donut chart
-
-    wedges, texts, autotexts = ax.pie(category_counts, autopct='%1.1f%%', startangle=90, colors=colors[:len(category_counts)], wedgeprops=wedgeprops)
+    wedges, texts, autotexts = ax.pie(category_counts, autopct='%1.1f%%', startangle=90, colors=colors[:len(category_counts)],
+                                      wedgeprops=dict(width=0.3, edgecolor='black', linewidth=1.5))
     
     ax.set_ylabel('')
-    ax.set_title(f"{response.capitalize()} Chart: {x_field}", fontsize=14)
-    ax.axis('equal')  # This ensures the pie chart is drawn as a circle.
+    ax.set_title(f"Pie Chart: {x_field}", fontsize=14)
+    ax.axis('equal')
     ax.legend(wedges, category_counts.index, title=x_field, loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
 
     for text in autotexts:
@@ -932,7 +977,7 @@ def generate_visualization():
 
             chart_function = chart_functions.get(chart_type)
             if chart_function:
-                chart_function(ax, plot_data)
+                chart_function(ax, plot_data, x_selected_fields, y_selected_fields, aggregation_method_var.get(), use_seaborn.get(), display_values.get(), int(value_label_font_size_var.get()))
 
             ax.set_xlabel(", ".join(x_selected_fields), fontsize=x_tick_label_font_size)
             ax.set_ylabel(", ".join(y_selected_fields), fontsize=y_tick_label_font_size)
