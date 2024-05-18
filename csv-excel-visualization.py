@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+import matplotlib.dates as mdates
 import seaborn as sns
 from tkinter import filedialog, messagebox, simpledialog, ttk, Listbox, MULTIPLE, IntVar, StringVar, Checkbutton, Scale, Toplevel
 import tkinter as tk
@@ -13,7 +14,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.3.0518.1")
+root.title("CSV/Excel Data Visualizer V1.5.4.0518.2")
 
 global x_selected_fields, y_selected_fields, dataset, original_dataset, last_file_path
 x_selected_fields = []
@@ -421,14 +422,7 @@ def advanced_chart_recommendation(x_columns, y_columns, dataset):
     # Default for numeric types or mixed usage
     return "Scatter Plot" if total_entries > 1000 else "Line"
 
-import pandas as pd
-import numpy as np
-import itertools
-import seaborn as sns
-import matplotlib.pyplot as plt
-from tkinter import messagebox
-import matplotlib.dates as mdates
-
+# Line Plot Package
 def aggregate_data(data, x_col, y_col, aggregation_method):
     if aggregation_method == 'mean':
         return data.groupby(x_col, as_index=False)[y_col].mean()
@@ -436,6 +430,10 @@ def aggregate_data(data, x_col, y_col, aggregation_method):
         return data.groupby(x_col, as_index=False)[y_col].sum()
     elif aggregation_method == 'median':
         return data.groupby(x_col, as_index=False)[y_col].median()
+    elif aggregation_method == 'max':
+        return data.groupby(x_col, as_index=False)[y_col].max()
+    elif aggregation_method == 'min':
+        return data.groupby(x_col, as_index=False)[y_col].min()
     else:
         raise ValueError(f"Unknown aggregation method: {aggregation_method}")
 
@@ -576,13 +574,83 @@ def plot_bar(ax, plot_data):
     except Exception as e:
         messagebox.showerror("Error", f"Failed to plot bar chart: {str(e)}")
 
-def plot_area(ax, plot_data):
+def plot_area(ax, data, x_selected_fields, y_selected_fields, aggregation_method, use_seaborn, display_values, value_label_font_size):
     if len(x_selected_fields) != 1:
-        messagebox.showerror("Area - Error", "Area plot requires exactly one X field and multiple Y fields.")
+        messagebox.showerror("Area - Error", "Area plot requires exactly one X field.")
         return
-    for y_col in y_selected_fields:
-        ax.fill_between(plot_data[x_selected_fields[0]], plot_data[y_col], alpha=0.3, label=y_col, color='#66c2a5')
-    ax.legend()
+
+    if not y_selected_fields:
+        messagebox.showerror("Area - Error", "Area plot requires at least one Y field.")
+        return
+    
+    x_col = x_selected_fields[0]
+    colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
+    
+    # Check if x_col is datetime and ask for aggregation if necessary
+    if pd.api.types.is_datetime64_any_dtype(data[x_col]):
+        sorting_option = messagebox.askquestion("Datetime Aggregation", 
+                                                "Would you like to group by Year, Month, Day, Hour, or Minute?")
+        if sorting_option == "Yes":
+            aggregation_period = messagebox.askquestion("Aggregation Period", 
+                                                        "Please select one of the following: Year, Month, Day, Hour, or Minute.")
+            if aggregation_period == "Year":
+                data[x_col] = data[x_col].dt.to_period("Y").dt.to_timestamp()
+            elif aggregation_period == "Month":
+                data[x_col] = data[x_col].dt.to_period("M").dt.to_timestamp()
+            elif aggregation_period == "Day":
+                data[x_col] = data[x_col].dt.date
+            elif aggregation_period == "Hour":
+                data[x_col] = data[x_col].dt.floor("H")
+            elif aggregation_period == "Minute":
+                data[x_col] = data[x_col].dt.floor("T")
+    elif pd.api.types.is_categorical_dtype(data[x_col]) or pd.api.types.is_object_dtype(data[x_col]):
+        if data[x_col].nunique() > 10:  # Arbitrary large number of categories
+            reduce_option = messagebox.askyesno("Reduce Categories", 
+                                                "Too many categories. Would you like to reduce them?")
+            if reduce_option:
+                data = reduce_categories(data, x_col, 10)
+
+    # Ensure numeric Y fields
+    for col in y_selected_fields:
+        if not pd.api.types.is_numeric_dtype(data[col]):
+            try:
+                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+            except ValueError:
+                messagebox.showerror("Area - Error", f"Y field '{col}' contains non-numeric data.")
+                return
+
+    # Sort data based on the X-axis
+    data = data.sort_values(by=x_col)
+
+    # Check if we should stack the areas
+    if len(y_selected_fields) > 1:
+        stack_option = messagebox.askyesno("Stack Areas", 
+                                           "You have multiple Y fields. Would you like to stack them?")
+    else:
+        stack_option = False
+
+    # Plotting the area chart
+    for i, y_col in enumerate(y_selected_fields):
+        if stack_option:
+            if i == 0:
+                ax.fill_between(data[x_col], 0, data[y_col], alpha=0.5, label=y_col, color=colors[i % len(colors)])
+            else:
+                ax.fill_between(data[x_col], data[y_selected_fields[:i]].sum(axis=1), 
+                                data[y_selected_fields[:i+1]].sum(axis=1), 
+                                alpha=0.5, label=y_col, color=colors[i % len(colors)])
+        else:
+            ax.fill_between(data[x_col], 0, data[y_col], alpha=0.3, label=y_col, color=colors[i % len(colors)])
+
+    # Formatting the X-axis if datetime
+    if pd.api.types.is_datetime64_any_dtype(data[x_col]):
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+
+    ax.legend(title="Series")
+    ax.set_xlabel(x_col)
+    ax.set_ylabel("Values")
+    ax.set_title(f"Area Plot of {', '.join(y_selected_fields)} vs. {x_col}")
+    plt.tight_layout()
 
 def plot_stacked_bar(ax, plot_data):
     if len(x_selected_fields) != 1:
@@ -1165,7 +1233,7 @@ aggregation_method_var = tk.StringVar(value='mean')
 
 # Create a dropdown menu for selecting the aggregation method
 aggregation_method_dropdown = ttk.Combobox(frame, textvariable=aggregation_method_var, state='readonly')
-aggregation_method_dropdown['values'] = ['mean', 'sum', 'max', 'min']
+aggregation_method_dropdown['values'] = ['mean', 'sum', 'median', 'max', 'min']
 aggregation_method_dropdown.grid(column=2, row=16, padx=10, pady=1)
 
 # Initial state setup for these options
