@@ -14,7 +14,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.4.0519.1")
+root.title("CSV/Excel Data Visualizer V1.5.4.0519.3")
 
 global x_selected_fields, y_selected_fields, dataset, original_dataset, last_file_path
 x_selected_fields = []
@@ -296,7 +296,7 @@ def generate_dashboard_and_save():
                 title="Save Dashboard as PNG"
             )
             if file_path:
-                fig.savefig(file_path, dpi=300)
+                fig.savefig(file_path, dpi=600)
                 success_message = f"Dashboard saved successfully at {file_path}"
                 if failed_charts:
                     success_message += f"\n\nThe following charts could not be generated:\n" + "\n".join(failed_charts)
@@ -309,7 +309,7 @@ def update_aggression_options_based_on_chart_type():
     chart_type = chart_type_dropdown.get()
 
     # Enable/Disable value display options
-    if chart_type in ["Bar", "Column", "Line", "Stacked Bar", "Histogram"]:
+    if chart_type in ["Bar", "Column", "Line", "Stacked Bar", "Histogram", "Box Plot"]:
         display_values_checkbutton.config(state=tk.NORMAL)
         value_label_font_size_label.config(state=tk.NORMAL)
         value_label_font_size_entry.config(state=tk.NORMAL)
@@ -778,7 +778,7 @@ def plot_dual_axes(ax, plot_data):
 
     ax.figure.tight_layout()
 
-def plot_histogram(ax, plot_data):
+def plot_histogram(ax, plot_data, x_selected_fields):
     # Check if a single field is selected
     if len(x_selected_fields) != 1:
         messagebox.showerror("Histogram - Error", "Histogram requires exactly one field to be selected for the X axis.")
@@ -791,28 +791,43 @@ def plot_histogram(ax, plot_data):
         messagebox.showerror("Histogram - Error", "Histogram requires numerical data. Please select a numeric field.")
         return
 
+    # Remove any NaN or infinite values from the data
+    data = data[np.isfinite(data)]
+
+    # Check if there is any data left after removing NaNs and infinite values
+    if data.empty:
+        messagebox.showerror("Histogram - Error", "The selected data contains only missing or infinite values.")
+        return
+
     # Use the improved dialog function with data to get user preferences
     use_custom_bins, custom_bins = ask_for_histogram_customization(data)
 
-    if use_custom_bins:
-        # Plot histogram with the custom bins provided by the user
-        counts, bins, patches = ax.hist(data, bins=custom_bins, color='lightblue', edgecolor='black', alpha=0.7)
-    else:
-        # Automatic bins - Freedman-Diaconis rule as a fallback
-        q25, q75 = np.percentile(data, [25, 75])
-        bin_width = 2 * (q75 - q25) * len(data) ** (-1/3)
-        if bin_width == 0:
-            bin_width = 2.7 * np.std(data) / (len(data) ** (1/3))
+    try:
+        if use_custom_bins:
+            # Plot histogram with the custom bins provided by the user
+            counts, bins, patches = ax.hist(data, bins=custom_bins, color='lightblue', edgecolor='black', alpha=0.7)
+        else:
+            # Automatic bins - Freedman-Diaconis rule as a fallback
+            q25, q75 = np.percentile(data, [25, 75])
+            bin_width = 2 * (q75 - q25) * len(data) ** (-1/3)
+            if bin_width == 0:
+                bin_width = 2.7 * np.std(data) / (len(data) ** (1/3))
 
-        bin_count = int((data.max() - data.min()) / bin_width)
-        counts, bins, patches = ax.hist(data, bins=bin_count, color='lightblue', edgecolor='black', alpha=0.7)
+            bin_count = int((data.max() - data.min()) / bin_width)
+            counts, bins, patches = ax.hist(data, bins=bin_count, color='lightblue', edgecolor='black', alpha=0.7)
+    except Exception as e:
+        messagebox.showerror("Histogram - Error", f"An error occurred while plotting the histogram: {str(e)}")
+        return
 
     # Display values on bars if enabled
     if display_values.get():
-        font_size = int(value_label_font_size_var.get())
-        for count, rect in zip(counts, patches):
-            height = rect.get_height()
-            ax.text(rect.get_x() + rect.get_width() / 2, height, f'{int(height)}', ha='center', va='bottom', fontsize=font_size)
+        try:
+            font_size = int(value_label_font_size_var.get())
+            for count, rect in zip(counts, patches):
+                height = rect.get_height()
+                ax.text(rect.get_x() + rect.get_width() / 2, height, f'{int(height)}', ha='center', va='bottom', fontsize=font_size)
+        except Exception as e:
+            messagebox.showerror("Histogram - Error", f"An error occurred while displaying values on bars: {str(e)}")
 
     # Setting labels and titles
     ax.set_xlabel(", ".join(x_selected_fields), fontsize=12)
@@ -827,11 +842,23 @@ def plot_histogram(ax, plot_data):
     if display_skew.get():
         skew_text = f"Mean: {mean_value:.2f}, Std Dev: {std_dev:.2f}, Skew: {skew_value:.2f}"
         props = dict(boxstyle='round', facecolor='white', alpha=0.8)
-        ax.text(0.95, 0.95, skew_text, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='right', bbox=props)
+        ax.text(0.95, 0.95, skew_text, transform=ax.transAxes, fontsize=7, verticalalignment='top', horizontalalignment='right', bbox=props)
+
+        # Calculate the skew line using the probability density function (PDF) of the normal distribution
+        x_min, x_max = min(data), max(data)
+        x = np.linspace(x_min, x_max, 100)
+        pdf = norm.pdf(x, loc=mean_value, scale=std_dev)
+
+        # Scale the PDF to match the height of the histogram
+        pdf_scaled = pdf * np.max(counts) / np.max(pdf)
+
+        # Plot the skew line
+        ax.plot(x, pdf_scaled, color='red', linewidth=1.5, label='Skew Line')
+        ax.legend(fontsize=7)
 
     ax.grid(axis='y', linestyle='--', alpha=0.7)
 
-def plot_box(ax, plot_data):
+def plot_box(ax, plot_data, x_selected_fields, y_selected_fields, use_seaborn, display_values):
     if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
         ax.clear()
         ax.text(0.5, 0.5, "Box plot requires exactly one X field and one Y field.", ha='center', va='center')
@@ -850,26 +877,74 @@ def plot_box(ax, plot_data):
         ax.text(0.5, 0.5, f"Y field ({y_field}) must be numeric for box plot.", ha='center', va='center')
         return
 
-    if use_seaborn.get():
-        if plot_data[x_field].nunique() > 1:
-            try:
-                sns.boxplot(data=plot_data, x=x_field, y=y_field, ax=ax)
-            except ValueError as e:
-                ax.clear()
-                ax.text(0.5, 0.5, str(e), ha='center', va='center')
+    # Dataset type analysis and customization
+    if pd.api.types.is_datetime64_any_dtype(plot_data[x_field]):
+        aggregation_option = messagebox.askquestion("Datetime Aggregation",
+                                                    "The X field is a datetime. Would you like to aggregate it?")
+        if aggregation_option == "yes":
+            aggregation_period = messagebox.askquestion("Aggregation Period",
+                                                        "Please select the aggregation period:",
+                                                        options=["Year", "Month", "Day"])
+            if aggregation_period == "Year":
+                plot_data[x_field] = plot_data[x_field].dt.to_period("Y")
+            elif aggregation_period == "Month":
+                plot_data[x_field] = plot_data[x_field].dt.to_period("M")
+            elif aggregation_period == "Day":
+                plot_data[x_field] = plot_data[x_field].dt.to_period("D")
+
+    if pd.api.types.is_categorical_dtype(plot_data[x_field]) or pd.api.types.is_object_dtype(plot_data[x_field]):
+        num_categories = plot_data[x_field].nunique()
+        if num_categories > 10:
+            reduce_option = messagebox.askyesno("Reduce Categories",
+                                                f"The X field has {num_categories} categories. Would you like to reduce them?")
+            if reduce_option:
+                top_n = simpledialog.askinteger("Top N Categories", "Enter the number of top categories to keep:")
+                top_categories = plot_data[x_field].value_counts().nlargest(top_n).index
+                plot_data = plot_data[plot_data[x_field].isin(top_categories)]
+
+    try:
+        if use_seaborn.get():
+            sns.boxplot(data=plot_data, x=x_field, y=y_field, ax=ax)
+            boxes = ax.artists
         else:
-            try:
-                sns.boxplot(data=plot_data, y=y_field, ax=ax)
-            except ValueError as e:
-                ax.clear()
-                ax.text(0.5, 0.5, str(e), ha='center', va='center')
-    else:
-        if plot_data[x_field].nunique() > 1:
-            grouped_data = [group[y_field].values for _, group in plot_data.groupby(x_field)]
-            labels = plot_data[x_field].unique()
-            ax.boxplot(grouped_data, labels=labels)
-        else:
-            ax.boxplot([plot_data[y_field].values], labels=[x_field])
+            if plot_data[x_field].nunique() > 1:
+                grouped_data = [group[y_field].values for _, group in plot_data.groupby(x_field)]
+                labels = plot_data[x_field].unique()
+                box_plot_data = ax.boxplot(grouped_data, labels=labels)
+            else:
+                box_plot_data = ax.boxplot([plot_data[y_field].values], labels=[str(plot_data[x_field].iloc[0])])
+                labels = [str(plot_data[x_field].iloc[0])]
+            boxes = box_plot_data['boxes']
+
+        # Display values on the box plot if selected
+        if display_values.get():
+            for i, box in enumerate(boxes):
+                x = box.get_xdata()[0]
+                y_min, y_q1, y_median, y_q3, y_max = np.percentile(plot_data[plot_data[x_field] == labels[i]][y_field],
+                                                                    [0, 25, 50, 75, 100])
+                ax.text(x, y_min, f'{y_min:.2f}', fontsize=8, ha='center', va='top')
+                ax.text(x, y_q1, f'{y_q1:.2f}', fontsize=8, ha='center', va='top')
+                ax.text(x, y_median, f'{y_median:.2f}', fontsize=8, ha='center', va='bottom')
+                ax.text(x, y_q3, f'{y_q3:.2f}', fontsize=8, ha='center', va='bottom')
+                ax.text(x, y_max, f'{y_max:.2f}', fontsize=8, ha='center', va='bottom')
+
+    except Exception as e:
+        ax.clear()
+        ax.text(0.5, 0.5, str(e), ha='center', va='center')
+        return
+
+    # Customizing the plot
+    ax.set_xlabel(x_field, fontsize=x_axis_font_size_var.get())
+    ax.set_ylabel(y_field, fontsize=y_axis_font_size_var.get())
+    ax.set_title(f"Box Plot of {y_field} vs. {x_field}")
+
+    # Rotate x-axis labels if there are too many categories
+    if plot_data[x_field].nunique() > 10:
+        plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+
+    # Adjust plot layout
+    plt.tight_layout()
+
 
 def plot_pie(ax, plot_data, x_selected_fields, title_font_size, label_font_size):
     # Check if exactly one field is selected for the pie chart
@@ -1090,6 +1165,10 @@ def generate_visualization():
             if chart_function:
                 if chart_type == "Pie Chart":
                     chart_function(ax, plot_data, x_selected_fields, title_font_size, int(value_label_font_size_var.get()))
+                elif chart_type == "Histogram":
+                    chart_function(ax, plot_data, x_selected_fields)
+                elif chart_type == "Box Plot":
+                    chart_function(ax, plot_data, x_selected_fields, y_selected_fields, use_seaborn, display_values)
                 else:
                     chart_function(ax, plot_data, x_selected_fields, y_selected_fields, aggregation_method_var.get(), use_seaborn.get(), display_values.get(), int(value_label_font_size_var.get()))
                 
