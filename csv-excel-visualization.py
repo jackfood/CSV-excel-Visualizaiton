@@ -14,7 +14,7 @@ import os
 
 # GUI components
 root = tk.Tk()
-root.title("CSV/Excel Data Visualizer V1.5.4.0518.2")
+root.title("CSV/Excel Data Visualizer V1.5.4.0519.1")
 
 global x_selected_fields, y_selected_fields, dataset, original_dataset, last_file_path
 x_selected_fields = []
@@ -346,7 +346,11 @@ def display_values_on_bars(ax, bars, font_size=4):
 
 def store_x_axis_selection():
     global x_selected_fields
-    x_selected_fields = [x_axis_listbox.get(idx) for idx in x_axis_listbox.curselection()]
+    selected_indices = x_axis_listbox.curselection()
+    if selected_indices:
+        x_selected_fields = [x_axis_listbox.get(idx) for idx in selected_indices]
+    else:
+        x_selected_fields = []
     x_axis_label["text"] = f"X Axis (Selected: {', '.join(x_selected_fields)}):" if x_selected_fields else "X Axis:"
     update_aggression_options_based_on_selection()
 
@@ -867,37 +871,76 @@ def plot_box(ax, plot_data):
         else:
             ax.boxplot([plot_data[y_field].values], labels=[x_field])
 
-def plot_pie(ax, plot_data):
+def plot_pie(ax, plot_data, x_selected_fields, title_font_size, label_font_size):
+    # Check if exactly one field is selected for the pie chart
     if not x_selected_fields or len(x_selected_fields) != 1:
         messagebox.showerror("Pie - Error", "Pie Chart requires exactly one field selected for the X Axis.")
         return
-
+    
     x_field = x_selected_fields[0]
+    
+    # Validate the field exists in the dataframe
+    if x_field not in plot_data.columns:
+        messagebox.showerror("Pie - Error", f"Field '{x_field}' not found in data.")
+        return
+    
+    # Check if the data type is categorical
     if pd.api.types.is_numeric_dtype(plot_data[x_field]):
         messagebox.showerror("Error", "Pie Chart requires categorical data, not numeric data.")
         return
 
+    # Aggregate the category counts
     try:
         category_counts = plot_data[x_field].value_counts()
-    except KeyError:
-        messagebox.showerror("Pie - Error", f"Field '{x_field}' not found in data.")
+    except Exception as e:
+        messagebox.showerror("Pie - Error", f"An error occurred while counting categories: {e}")
         return
 
-    colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3']
-    wedges, texts, autotexts = ax.pie(category_counts, autopct='%1.1f%%', startangle=90, colors=colors[:len(category_counts)],
-                                      wedgeprops=dict(width=0.3, edgecolor='black', linewidth=1.5))
-    
-    ax.set_ylabel('')
-    ax.set_title(f"Pie Chart: {x_field}", fontsize=14)
-    ax.axis('equal')
-    ax.legend(wedges, category_counts.index, title=x_field, loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+    num_categories = len(category_counts)
 
+    # Check if there are more than 10 categories
+    if num_categories > 10:
+        # Ask user how many categories they want to display
+        while True:
+            user_input = simpledialog.askinteger("Input", f"More than 10 categories found. Enter the number of categories to display (max {num_categories}):",
+                                                 minvalue=1, maxvalue=num_categories)
+            if user_input is None:
+                messagebox.showinfo("Pie - Info", "Operation cancelled by user.")
+                return
+            if 1 <= user_input <= num_categories:
+                break
+            else:
+                messagebox.showerror("Invalid Input", f"Please enter a number between 1 and {num_categories}.")
+
+        # Group categories beyond the user specified number into 'Other'
+        if user_input < num_categories:
+            category_counts = pd.concat([category_counts[:user_input], pd.Series([category_counts[user_input:].sum()], index=['Other'])])
+
+    # Define colors for the pie chart; use a colormap for a large number of categories
+    cmap = plt.get_cmap("tab20")
+    colors = [cmap(i) for i in range(len(category_counts))]
+
+    # Plot the pie chart
+    wedges, texts, autotexts = ax.pie(category_counts, labels=category_counts.index, autopct='%1.1f%%',
+                                      startangle=90, colors=colors, wedgeprops=dict(width=0.98, edgecolor='black', linewidth=1.5))
+
+    # Customize the title and appearance
+    ax.set_title(f"Pie Chart: {x_field}", fontsize=title_font_size, fontweight='bold', color='navy')
+    ax.axis('equal')  # Equal aspect ratio ensures the pie chart is circular.
+
+    # Customize legend and text labels
+    ax.legend(wedges, category_counts.index, title=x_field, loc="center left", bbox_to_anchor=(1, 0, 0.5, 1), fontsize=label_font_size)
+    
     for text in autotexts:
         text.set_color('black')
-        text.set_fontsize(10)
+        text.set_fontsize(label_font_size)
         text.set_weight('bold')
     for text in texts:
-        text.set_fontsize(10)
+        text.set_fontsize(label_font_size)
+        text.set_color('darkblue')
+
+    plt.setp(autotexts, size=label_font_size, weight="bold", color="white")
+
 
 def plot_column(ax, plot_data):
     if len(x_selected_fields) != 1 or len(y_selected_fields) != 1:
@@ -1045,8 +1088,11 @@ def generate_visualization():
 
             chart_function = chart_functions.get(chart_type)
             if chart_function:
-                chart_function(ax, plot_data, x_selected_fields, y_selected_fields, aggregation_method_var.get(), use_seaborn.get(), display_values.get(), int(value_label_font_size_var.get()))
-
+                if chart_type == "Pie Chart":
+                    chart_function(ax, plot_data, x_selected_fields, title_font_size, int(value_label_font_size_var.get()))
+                else:
+                    chart_function(ax, plot_data, x_selected_fields, y_selected_fields, aggregation_method_var.get(), use_seaborn.get(), display_values.get(), int(value_label_font_size_var.get()))
+                
             ax.set_xlabel(", ".join(x_selected_fields), fontsize=x_tick_label_font_size)
             ax.set_ylabel(", ".join(y_selected_fields), fontsize=y_tick_label_font_size)
             ax.set_title(f"{chart_type}: {', '.join(x_selected_fields)} vs {', '.join(y_selected_fields)}", fontsize=title_font_size)
